@@ -263,3 +263,4 @@ docker-compose up -d
 MIT License - свободное использование и модификация.# Test sync Thu Aug 28 14:37:58 WEST 2025
 # CI/CD Test Thu Aug 28 14:46:18 WEST 2025
 # Auto-sync test Thu Aug 28 14:52:37 WEST 2025
+# Test comment
