@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: tg-article-bot-api
+    env: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python api_server.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PORT
+        value: 5000
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      # Эти переменные нужно установить в Render Dashboard
+      # - key: DATABASE_URL
+      # - key: REDIS_URL
+      # - key: ARTICLE_BOT_TOKEN
+      # - key: OPENAI_API_KEY
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+  - type: redis
+    name: tg-article-bot-redis
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+
+databases:
+  - name: tg-article-bot-db
+    databaseName: article_bot
+    user: article_bot
+    plan: starter

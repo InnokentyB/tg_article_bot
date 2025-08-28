@@ -1,0 +1,94 @@
+# Docker Compose configuration for Telegram Article Bot
+
+services:
+  # PostgreSQL база данных
+  postgres:
+    image: postgres:15-alpine
+    container_name: article-bot-db
+    environment:
+      POSTGRES_DB: article_bot
+      POSTGRES_USER: article_bot
+      POSTGRES_PASSWORD: article_bot_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U article_bot -d article_bot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis для кэширования и сессий
+  redis:
+    image: redis:7-alpine
+    container_name: article-bot-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API сервер
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: article-bot-api
+    environment:
+      - DATABASE_URL=postgresql://article_bot:article_bot_password@postgres:5432/article_bot
+      - REDIS_URL=redis://redis:6379/0
+      - ARTICLE_BOT_TOKEN=${ARTICLE_BOT_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    ports:
+      - "5001:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    command: python api_server.py
+
+  # Telegram бот
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: article-bot-telegram
+    environment:
+      - DATABASE_URL=postgresql://article_bot:article_bot_password@postgres:5432/article_bot
+      - REDIS_URL=redis://redis:6379/0
+      - ARTICLE_BOT_TOKEN=${ARTICLE_BOT_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    command: python simple_bot.py
+
+  # Nginx для проксирования (опционально)
+  nginx:
+    image: nginx:alpine
+    container_name: article-bot-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - api
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+  redis_data:

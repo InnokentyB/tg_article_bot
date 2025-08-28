@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Демо API управления статьями</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .article {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            background-color: #fafafa;
+        }
+        .article-title {
+            font-weight: bold;
+            color: #007bff;
+            margin-bottom: 10px;
+        }
+        .article-meta {
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+        .categories {
+            display: flex;
+            gap: 5px;
+            margin: 5px 0;
+        }
+        .category-tag {
+            background-color: #e9ecef;
+            padding: 2px 8px;
+            border-radius: 15px;
+            font-size: 0.8em;
+        }
+        #loading {
+            display: none;
+            color: #666;
+            font-style: italic;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🤖 Демо API управления статьями</h1>
+        <p>Этот интерфейс демонстрирует работу с API для управления статьями через Telegram-бота.</p>
+        
+        <div>
+            <button onclick="loadArticles()">📄 Загрузить статьи</button>
+            <button onclick="loadStatistics()">📊 Статистика</button>
+            <button onclick="testHealth()">💚 Проверить API</button>
+        </div>
+        
+        <div id="loading">Загрузка...</div>
+    </div>
+
+    <div class="container">
+        <h2>Состояние API</h2>
+        <div id="health-status">Нажмите "Проверить API" для проверки</div>
+    </div>
+
+    <div class="container">
+        <h2>Статистика</h2>
+        <div id="statistics">Нажмите "Статистика" для загрузки</div>
+    </div>
+
+    <div class="container">
+        <h2>Статьи</h2>
+        <div id="articles">Нажмите "Загрузить статьи" для отображения</div>
+    </div>
+
+    <div class="container">
+        <h2>Как использовать</h2>
+        <ol>
+            <li><strong>Создайте бота:</strong> Найдите @BotFather в Telegram и создайте нового бота</li>
+            <li><strong>Добавьте токен:</strong> Токен уже добавлен в секреты Replit</li>
+            <li><strong>Найдите бота:</strong> Найдите своего бота в Telegram по имени</li>
+            <li><strong>Отправьте статью:</strong> Отправьте боту текст статьи или ссылку на статью</li>
+            <li><strong>Проверьте результат:</strong> Статья будет сохранена и категоризована автоматически</li>
+        </ol>
+        
+        <h3>Доступные API endpoints:</h3>
+        <ul>
+            <li><code>GET /api/health</code> - проверка работоспособности</li>
+            <li><code>GET /api/articles</code> - получение статей с фильтрацией</li>
+            <li><code>GET /api/articles/{id}</code> - получение конкретной статьи</li>
+            <li><code>GET /api/articles/fingerprint/{fingerprint}</code> - поиск по отпечатку</li>
+            <li><code>PUT /api/articles/{id}/counters</code> - обновление счетчиков</li>
+            <li><code>GET /api/statistics</code> - общая статистика</li>
+        </ul>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        async function testHealth() {
+            showLoading(true);
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                document.getElementById('health-status').innerHTML = `
+                    <div style="color: green;">✅ API работает</div>
+                    <div>Сервис: ${data.service}</div>
+                    <div>Статус: ${data.status}</div>
+                `;
+            } catch (error) {
+                document.getElementById('health-status').innerHTML = `
+                    <div style="color: red;">❌ Ошибка подключения к API</div>
+                    <div>${error.message}</div>
+                `;
+            }
+            showLoading(false);
+        }
+
+        async function loadArticles() {
+            showLoading(true);
+            try {
+                const response = await fetch(`${API_BASE}/articles?limit=20`);
+                const articles = await response.json();
+                
+                if (articles.length === 0) {
+                    document.getElementById('articles').innerHTML = `
+                        <div style="text-align: center; color: #666; padding: 40px;">
+                            <h3>📝 Статей пока нет</h3>
+                            <p>Отправьте статью боту в Telegram, чтобы увидеть её здесь</p>
+                            <p>Бот принимает как текст, так и ссылки на статьи</p>
+                        </div>
+                    `;
+                } else {
+                    const articlesHtml = articles.map(article => `
+                        <div class="article">
+                            <div class="article-title">${article.title || 'Без заголовка'}</div>
+                            <div class="article-meta">
+                                📅 ${new Date(article.created_at).toLocaleString('ru')} | 
+                                🌐 ${article.language || 'неизвестно'} |
+                                👤 ID: ${article.telegram_user_id || 'аноним'}
+                            </div>
+                            <div class="categories">
+                                ${(article.categories_auto || []).map(cat => `<span class="category-tag">${cat}</span>`).join('')}
+                            </div>
+                            <div style="margin-top: 10px;">
+                                ${article.summary || article.text?.substring(0, 200) + '...'}
+                            </div>
+                            <div style="margin-top: 10px; font-size: 0.9em; color: #666;">
+                                💬 ${article.comments_count} | 👍 ${article.likes_count} | 👁️ ${article.views_count}
+                            </div>
+                        </div>
+                    `).join('');
+                    document.getElementById('articles').innerHTML = articlesHtml;
+                }
+            } catch (error) {
+                document.getElementById('articles').innerHTML = `
+                    <div style="color: red;">❌ Ошибка загрузки статей: ${error.message}</div>
+                `;
+            }
+            showLoading(false);
+        }
+
+        async function loadStatistics() {
+            showLoading(true);
+            try {
+                const response = await fetch(`${API_BASE}/statistics`);
+                const stats = await response.json();
+                
+                let statsHtml = `<div class="stats">`;
+                statsHtml += `<div class="stat-card">
+                    <div class="stat-number">${stats.total_articles}</div>
+                    <div>Всего статей</div>
+                </div>`;
+                
+                const categoryCount = Object.keys(stats.categories || {}).length;
+                statsHtml += `<div class="stat-card">
+                    <div class="stat-number">${categoryCount}</div>
+                    <div>Категорий</div>
+                </div>`;
+                
+                const languageCount = Object.keys(stats.languages || {}).length;
+                statsHtml += `<div class="stat-card">
+                    <div class="stat-number">${languageCount}</div>
+                    <div>Языков</div>
+                </div>`;
+                
+                const sourceCount = Object.keys(stats.top_sources || {}).length;
+                statsHtml += `<div class="stat-card">
+                    <div class="stat-number">${sourceCount}</div>
+                    <div>Источников</div>
+                </div>`;
+                
+                statsHtml += `</div>`;
+                
+                if (stats.categories && Object.keys(stats.categories).length > 0) {
+                    statsHtml += `<h3>Популярные категории:</h3>`;
+                    Object.entries(stats.categories).slice(0, 10).forEach(([cat, count]) => {
+                        statsHtml += `<span class="category-tag">${cat}: ${count}</span> `;
+                    });
+                }
+                
+                document.getElementById('statistics').innerHTML = statsHtml;
+            } catch (error) {
+                document.getElementById('statistics').innerHTML = `
+                    <div style="color: red;">❌ Ошибка загрузки статистики: ${error.message}</div>
+                `;
+            }
+            showLoading(false);
+        }
+
+        // Auto-load health check on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            testHealth();
+        });
+    </script>
+</body>
+</html>

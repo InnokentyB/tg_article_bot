@@ -1,0 +1,52 @@
+# Primary categories and seed descriptors used for embedding-based similarity
+primary:
+  - key: "AI"
+    label: "Искусственный интеллект"
+    description: "ML, нейросети, LLM, computer vision, NLP, MLOps, генеративные модели"
+  - key: "Data"
+    label: "Аналитика и данные"
+    description: "Data engineering, хранилища, ETL/ELT, BI, SQL, статистика"
+  - key: "Programming"
+    label: "Программирование"
+    description: "Языки, фреймворки, алгоритмы, практики разработки, DevTools"
+  - key: "Architecture"
+    label: "Архитектура и системы"
+    description: "DDD, архитектурные паттерны, интеграции, микросервисы, распределённые системы, системное проектирование"
+  - key: "Security"
+    label: "Безопасность"
+    description: "AppSec, IAM, криптография, кибербезопасность, защита данных, уязвимости, информационная безопасность"
+  - key: "Product"
+    label: "Продукт и менеджмент"
+    description: "Product/UX, JTBD, метрики, A/B тесты, монетизация"
+  - key: "Business"
+    label: "Бизнес и финансы"
+    description: "Финтех, платежи, банки, риск/скоринг, регуляции, compliance, налоги, налогообложение, НДФЛ, эмиграция, финансовое планирование"
+  - key: "Education"
+    label: "Образование"
+    description: "Методики обучения, EdTech, LMS, микрообучение, контент"
+  - key: "Ops"
+    label: "Инфраструктура и DevOps"
+    description: "Cloud, Kubernetes, CI/CD, наблюдаемость, SRE"
+  - key: "Management"
+    label: "Менеджмент и процессы"
+    description: "Project management, Agile, Scrum, процессы разработки, team lead, управление командой"
+  - key: "Career"
+    label: "Карьера и развитие"
+    description: "Карьерный рост, собеседования, навыки, обучение, профессиональное развитие, вакансии, должностные обязанности, системный анализ как профессия, рынок труда"
+  - key: "Other"
+    label: "Другое"
+    description: "Темы вне основных рубрик, общие обзоры, культура"
+
+subcategories:
+  AI: ["LLM", "NLP", "Computer Vision", "MLOps", "GenAI", "Reinforcement Learning"]
+  Data: ["Data Engineering", "BI/Analytics", "Data Science", "Visualization", "Data Quality"]
+  Programming: ["Python", "JavaScript", "Java", "Go", "Rust", "Testing", "Patterns"]
+  Architecture: ["DDD", "Microservices", "Event-Driven", "Integration", "BPMN/UseCases"]
+  Security: ["AppSec", "IAM", "Crypto", "Threat Modeling", "Compliance"]
+  Product: ["Discovery", "Monetization", "Growth", "A/B Testing", "UX"]
+  Business: ["Fintech", "Payments", "Banking", "Risk/Scoring", "Regulations", "Taxes", "Legal", "Immigration", "Investment"]
+  Education: ["EdTech", "LMS", "Microlearning", "Pedagogy", "Assessment"]
+  Ops: ["Cloud", "Kubernetes", "CI/CD", "Monitoring", "SRE"]
+  Management: ["Agile", "Scrum", "Team Leadership", "Project Management", "Process Optimization"]
+  Career: ["Interview Prep", "Skill Development", "Professional Growth", "Networking", "Industry Trends"]
+  Other: ["General", "Culture", "Industry News"]
