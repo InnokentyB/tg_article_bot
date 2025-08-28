@@ -260,4 +260,4 @@ docker-compose up -d
 
 ## Лицензия
 
-MIT License - свободное использование и модификация.
+MIT License - свободное использование и модификация.# Test sync Thu Aug 28 14:37:58 WEST 2025
