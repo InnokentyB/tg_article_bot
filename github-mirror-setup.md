@@ -87,8 +87,8 @@ railway link --repo https://gitlab.com/i.a.bodrov85/tg_article_bot.git
 # В Railway Dashboard или через CLI
 railway variables set DATABASE_URL="postgresql://..."
 railway variables set REDIS_URL="redis://..."
-railway variables set ARTICLE_BOT_TOKEN="8016496837:AAHw5dv5b5X_Ad4GKBqVqzEH8izdS0aUytY"
-railway variables set OPENAI_API_KEY="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"
+railway variables set ARTICLE_BOT_TOKEN="your_telegram_bot_token_here"
+railway variables set OPENAI_API_KEY="your_openai_api_key_here"
 ```
 
 ---

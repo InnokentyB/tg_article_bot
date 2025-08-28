@@ -104,8 +104,8 @@ cat ~/.ssh/github_key
 ```bash
 DATABASE_URL=postgresql://article_bot:password@host:port/db
 REDIS_URL=redis://host:port/0
-ARTICLE_BOT_TOKEN=8016496837:AAHw5dv5b5X_Ad4GKBqVqzEH8izdS0aUytY
-OPENAI_API_KEY=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
+ARTICLE_BOT_TOKEN=your_telegram_bot_token_here
+OPENAI_API_KEY=your_openai_api_key_here
 ENVIRONMENT=production
 LOG_LEVEL=INFO
 ```
