@@ -1,7 +1,6 @@
 stages:
   - test
 
-# Базовый тест
 test_basic:
   stage: test
   image: alpine:latest
@@ -10,8 +9,5 @@ test_basic:
     - echo "Testing basic functionality..."
     - echo "GitLab CI/CD is working!"
     - echo "Current time: $(date)"
-    - echo "Testing variables:"
-    - echo "GITHUB_USERNAME: $GITHUB_USERNAME"
-    - echo "SSH Key exists: $([ -n \"$GITHUB_SSH_KEY\" ] && echo \"YES\" || echo \"NO\")"
   only:
     - main
