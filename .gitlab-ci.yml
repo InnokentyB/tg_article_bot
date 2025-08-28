@@ -25,9 +25,9 @@ sync_to_github:
     - echo "GitHub Username: $GITHUB_USERNAME"
     - git clone https://gitlab.com/i.a.bodrov85/tg_article_bot.git
     - cd tg_article_bot
-    - git remote add github git@github.com:$GITHUB_USERNAME/tg_article_bot.git || true
+    - git remote add github git@github.com/$GITHUB_USERNAME/tg_article_bot.git
     - git push github main
-    - echo "✅ Код синхронизирован с GitHub для Railway"
+    - echo "Code synced to GitHub"
   only:
     - main
   when: manual
