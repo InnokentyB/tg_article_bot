@@ -12,6 +12,6 @@ test_basic:
     - echo "Current time: $(date)"
     - echo "Testing variables:"
     - echo "GITHUB_USERNAME: $GITHUB_USERNAME"
-    - echo "SSH Key exists: $([ -n "$GITHUB_SSH_KEY" ] && echo "YES" || echo "NO")"
+    - echo "SSH Key exists: $([ -n \"$GITHUB_SSH_KEY\" ] && echo \"YES\" || echo \"NO\")"
   only:
     - main
