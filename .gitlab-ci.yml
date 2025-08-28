@@ -8,6 +8,5 @@ test_basic:
     - echo "Hello from GitLab CI/CD!"
     - echo "Testing basic functionality..."
     - echo "GitLab CI/CD is working!"
-    - echo "Current time: $(date)"
   only:
     - main
