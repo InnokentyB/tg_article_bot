@@ -14,6 +14,9 @@ sync_to_github:
     - git config --global user.email "ci@example.com"
     - git config --global user.name "GitLab CI"
   script:
+    - echo "Testing GitHub sync..."
+    - echo "GitHub Username: $GITHUB_USERNAME"
+    - echo "SSH Key configured: $([ -n "$GITHUB_SSH_KEY" ] && echo "YES" || echo "NO")"
     - git clone https://gitlab.com/i.a.bodrov85/tg_article_bot.git
     - cd tg_article_bot
     - git remote add github git@github.com:$GITHUB_USERNAME/tg_article_bot.git || true
