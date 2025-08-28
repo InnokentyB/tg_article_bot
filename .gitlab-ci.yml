@@ -1,30 +1,13 @@
 stages:
-  - sync
+  - test
 
-# Синхронизация с GitHub для Railway
-sync_to_github:
-  stage: sync
+# Простой тест синхронизации
+test_sync:
+  stage: test
   image: alpine:latest
-  before_script:
-    - apk add --no-cache git openssh-client
-    - eval $(ssh-agent -s)
-    - echo "$GITHUB_SSH_KEY" | tr -d '\r' | ssh-add -
-    - mkdir -p ~/.ssh
-    - chmod 700 ~/.ssh
-    - git config --global user.email "ci@example.com"
-    - git config --global user.name "GitLab CI"
   script:
-    - echo "Testing GitHub sync..."
-    - echo "GitHub Username: $GITHUB_USERNAME"
-    - echo "SSH Key configured: $([ -n "$GITHUB_SSH_KEY" ] && echo "YES" || echo "NO")"
-    - git clone https://gitlab.com/i.a.bodrov85/tg_article_bot.git
-    - cd tg_article_bot
-    - git remote add github git@github.com:$GITHUB_USERNAME/tg_article_bot.git || true
-    - git push github main
-    - echo "✅ Код синхронизирован с GitHub для Railway"
-  environment:
-    name: github-mirror
-    url: https://github.com/$GITHUB_USERNAME/tg_article_bot
+    - echo "Hello from GitLab CI/CD!"
+    - echo "Testing basic functionality..."
+    - echo "GitLab CI/CD is working!"
   only:
     - main
-  when: manual
