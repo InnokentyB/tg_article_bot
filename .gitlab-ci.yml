@@ -14,7 +14,7 @@ check_variables:
   script:
     - echo "Checking GitHub variables..."
     - echo "GITHUB_USERNAME: $GITHUB_USERNAME"
-    - echo "SSH Key exists: $([ -n \"$GITHUB_SSH_KEY\" ] && echo \"YES\" || echo \"NO\")"
+    - echo "SSH Key length: ${#GITHUB_SSH_KEY}"
   only:
     - main
   when: manual
