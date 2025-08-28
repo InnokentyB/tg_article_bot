@@ -1,5 +1,6 @@
 stages:
   - test
+  - check
 
 test_basic:
   stage: test
@@ -7,3 +8,13 @@ test_basic:
     - echo "Hello from GitLab CI/CD!"
     - echo "Testing basic functionality..."
     - echo "GitLab CI/CD is working!"
+
+check_variables:
+  stage: check
+  script:
+    - echo "Checking GitHub variables..."
+    - echo "GITHUB_USERNAME: $GITHUB_USERNAME"
+    - echo "SSH Key exists: $([ -n \"$GITHUB_SSH_KEY\" ] && echo \"YES\" || echo \"NO\")"
+  only:
+    - main
+  when: manual
