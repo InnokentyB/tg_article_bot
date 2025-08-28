@@ -1,13 +1,17 @@
 stages:
   - test
 
-# Простой тест синхронизации
+# Простой тест для GitLab.com shared runners
 test_sync:
   stage: test
   image: alpine:latest
+  tags:
+    - shared
   script:
     - echo "Hello from GitLab CI/CD!"
     - echo "Testing basic functionality..."
     - echo "GitLab CI/CD is working!"
+    - echo "Current time: $(date)"
   only:
     - main
+  when: always
