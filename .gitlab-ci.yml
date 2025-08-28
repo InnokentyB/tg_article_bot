@@ -13,8 +13,8 @@ check_variables:
   stage: check
   script:
     - echo "Checking GitHub variables..."
-    - echo "GITHUB_USERNAME: $GITHUB_USERNAME"
-    - echo "SSH Key length: ${#GITHUB_SSH_KEY}"
+    - echo "GITHUB_USERNAME: ${GITHUB_USERNAME:-not_set}"
+    - echo "GITHUB_SSH_KEY length: $(expr length "${GITHUB_SSH_KEY:-}")"
   only:
     - main
   when: manual
