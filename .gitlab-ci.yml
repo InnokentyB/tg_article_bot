@@ -25,6 +25,12 @@ sync_to_github:
     - git config --global user.name "GitLab CI"
   script:
     - echo "Starting GitHub sync"
+    - echo "SSH keys loaded"
+    - ssh-add -l
+    - echo "Testing SSH to GitHub"
+    - ssh -T git@github.com || echo "SSH test completed"
+    - echo "Testing repository access"
+    - git ls-remote git@github.com:InnokentyB/tg_article_bot.git || echo "Repository access test failed"
     - git clone git@gitlab.com:i.a.bodrov85/tg_article_bot.git
     - cd tg_article_bot
     - git remote add github git@github.com/$GITHUB_USERNAME/tg_article_bot.git
