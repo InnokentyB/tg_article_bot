@@ -87,6 +87,23 @@ async def health_check():
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=500, detail="Health check failed")
 
+@app.get("/api/health")
+async def api_health_check():
+    """API health check endpoint for Railway"""
+    try:
+        logger.info("API health check requested")
+        # Simple health check without ML service
+        response = {
+            "status": "healthy", 
+            "service": "article-api-railway",
+            "ml_service": "disabled"
+        }
+        logger.info(f"API health check response: {response}")
+        return response
+    except Exception as e:
+        logger.error(f"API health check failed: {e}")
+        raise HTTPException(status_code=500, detail="Health check failed")
+
 @app.post("/articles")
 async def create_article(article_data: dict):
     """Create new article with basic categorization"""
@@ -201,4 +218,6 @@ async def get_stats():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 5000)), log_level="info")
+    port = int(os.getenv("PORT", 5000))
+    logger.info(f"Starting Railway API server on port {port}")
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
