@@ -10,6 +10,10 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.fsm.storage.memory import MemoryStorage
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 from database import DatabaseManager
 from text_extractor import TextExtractor
 from article_categorizer import ArticleCategorizer
