@@ -27,15 +27,25 @@ sync_to_github:
   before_script:
     - apk add --no-cache git openssh-client
     - eval $(ssh-agent -s)
+    - echo "Adding GitLab SSH key..."
     - echo "$GITLAB_SSH_KEY" | base64 -d | ssh-add -
+    - echo "Adding GitHub SSH key..."
     - echo "$GITHUB_SSH_KEY" | base64 -d | ssh-add -
+    - echo "SSH keys loaded:"
+    - ssh-add -l
     - mkdir -p ~/.ssh
     - chmod 700 ~/.ssh
+    - ssh-keyscan -H gitlab.com >> ~/.ssh/known_hosts
+    - ssh-keyscan -H github.com >> ~/.ssh/known_hosts
     - git config --global user.email "ci@example.com"
     - git config --global user.name "GitLab CI"
   script:
     - echo "Starting GitHub sync..."
     - echo "GitHub Username $GITHUB_USERNAME"
+    - echo "Current directory: $(pwd)"
+    - echo "Testing SSH connection to GitLab..."
+    - ssh -T git@gitlab.com || echo "SSH test completed"
+    - echo "Cloning repository..."
     - git clone git@gitlab.com:i.a.bodrov85/tg_article_bot.git
     - cd tg_article_bot
     - git remote add github git@github.com/$GITHUB_USERNAME/tg_article_bot.git
