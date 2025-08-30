@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: article_bot_postgres
+    environment:
+      POSTGRES_DB: article_bot
+      POSTGRES_USER: article_bot
+      POSTGRES_PASSWORD: article_bot_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - article_bot_network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: article_bot_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - article_bot_network
+
+  # API Server with HTTPS
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: article_bot_api
+    environment:
+      - DATABASE_URL=postgresql://article_bot:article_bot_password@postgres:5432/article_bot
+      - REDIS_URL=redis://redis:6379/0
+      - ARTICLE_BOT_TOKEN=${ARTICLE_BOT_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - API_KEY=${API_KEY}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-60}
+      - RATE_LIMIT_MAX_REQUESTS=${RATE_LIMIT_MAX_REQUESTS:-100}
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./ssl:/app/ssl:ro  # SSL certificates
+    networks:
+      - article_bot_network
+    command: >
+      uvicorn api_server:app 
+      --host 0.0.0.0 
+      --port 5000 
+      --ssl-keyfile /app/ssl/key.pem 
+      --ssl-certfile /app/ssl/cert.pem
+
+  # Nginx Reverse Proxy with HTTPS
+  nginx:
+    image: nginx:alpine
+    container_name: article_bot_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.secure.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - api
+    networks:
+      - article_bot_network
+
+volumes:
+  postgres_data:
+
+networks:
+  article_bot_network:
+    driver: bridge

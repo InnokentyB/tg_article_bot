@@ -5,13 +5,82 @@
 http://localhost:5000
 ```
 
+## 🔐 Аутентификация
+
+### JWT Аутентификация (для пользователей)
+Для доступа к защищенным эндпоинтам используйте JWT токены:
+
+1. **Получить токен:**
+```http
+POST /api/auth/login
+Content-Type: application/x-www-form-urlencoded
+
+username=admin&password=fakehashedpassword
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer"
+}
+```
+
+2. **Использовать токен:**
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### API Key Аутентификация (для внешних сервисов)
+Для публичных эндпоинтов используйте API ключ:
+
+```http
+Authorization: Bearer your-api-key-here
+```
+
+### Переменные окружения
+```bash
+JWT_SECRET_KEY=your-super-secret-jwt-key
+API_KEY=your-api-key-for-external-services
+```
+
+## ⚡ Rate Limiting
+- **Лимит:** 100 запросов в минуту на IP адрес
+- **Окно:** 60 секунд
+- **При превышении:** HTTP 429 Too Many Requests
+
 ## Основные API Endpoints
+
+### 🔐 Аутентификация
+
+#### 1. Получить JWT токен
+```http
+POST /api/auth/login
+```
+
+**Request Body:**
+```
+username=admin&password=fakehashedpassword
+```
+
+#### 2. Информация о текущем пользователе
+```http
+GET /api/auth/me
+Authorization: Bearer <jwt_token>
+```
 
 ### 📚 Статьи
 
-#### 1. Получить все статьи
+#### 1. Получить все статьи (защищено)
 ```http
 GET /api/articles
+Authorization: Bearer <jwt_token>
+```
+
+#### 2. Получить публичные статьи (API Key)
+```http
+GET /api/public/articles
+Authorization: Bearer <api_key>
 ```
 
 **Query Parameters:**
