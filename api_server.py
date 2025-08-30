@@ -28,6 +28,11 @@ async def startup_event():
     
     logger.info("Starting up API server...")
     
+    # Log environment variables
+    logger.info(f"PORT: {os.getenv('PORT', 'not set')}")
+    logger.info(f"DATABASE_URL: {'set' if os.getenv('DATABASE_URL') else 'not set'}")
+    logger.info(f"RAILWAY_ENVIRONMENT: {os.getenv('RAILWAY_ENVIRONMENT', 'not set')}")
+    
     # Try to initialize database
     try:
         from database import DatabaseManager
@@ -91,7 +96,9 @@ async def test_endpoint():
     logger.info("Test endpoint called")
     return {
         "message": "Test endpoint works!",
-        "port": os.getenv("PORT", "not set")
+        "port": os.getenv("PORT", "not set"),
+        "database_url": "set" if os.getenv("DATABASE_URL") else "not set",
+        "railway_environment": os.getenv("RAILWAY_ENVIRONMENT", "not set")
     }
 
 @app.get("/articles")
