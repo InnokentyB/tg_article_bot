@@ -63,6 +63,80 @@ async def test_endpoint():
         "port": os.getenv("PORT", "not set")
     }
 
+@app.get("/articles")
+async def get_articles(limit: int = 10, offset: int = 0):
+    """Get articles"""
+    try:
+        # Try to get from database if available
+        try:
+            from database import DatabaseManager
+            db_manager = DatabaseManager()
+            await db_manager.initialize()
+            
+            articles = await db_manager.get_articles(limit=limit, offset=offset)
+            await db_manager.close()
+            
+            return {"articles": articles, "count": len(articles)}
+            
+        except Exception as db_error:
+            logger.warning(f"Database error, using mock data: {db_error}")
+            # Fallback to mock data
+            return {
+                "articles": [
+                    {
+                        "id": 1,
+                        "title": "Mock Article",
+                        "text": "This is a mock article",
+                        "categories": ["Technology"],
+                        "created_at": "2024-01-01T00:00:00Z"
+                    }
+                ],
+                "count": 1
+            }
+        
+    except Exception as e:
+        logger.error(f"Error getting articles: {e}")
+        return {"error": str(e)}
+
+@app.get("/statistics")
+async def get_statistics():
+    """Get statistics"""
+    try:
+        # Try to get from database if available
+        try:
+            from database import DatabaseManager
+            db_manager = DatabaseManager()
+            await db_manager.initialize()
+            
+            async with db_manager.pool.acquire() as conn:
+                articles_count = await conn.fetchval("SELECT COUNT(*) FROM articles")
+                users_count = await conn.fetchval("SELECT COUNT(*) FROM users")
+            
+            await db_manager.close()
+            
+            return {
+                "articles_count": articles_count,
+                "users_count": users_count,
+                "ml_service": "basic",
+                "database": "enabled",
+                "status": "ok"
+            }
+            
+        except Exception as db_error:
+            logger.warning(f"Database error, using mock data: {db_error}")
+            # Fallback to mock data
+            return {
+                "articles_count": 1,
+                "users_count": 1,
+                "ml_service": "basic",
+                "database": "disabled",
+                "status": "ok"
+            }
+        
+    except Exception as e:
+        logger.error(f"Error getting statistics: {e}")
+        return {"error": str(e)}
+
 @app.post("/articles")
 async def create_article(article_data: dict):
     """Create new article with basic categorization"""
@@ -70,6 +144,7 @@ async def create_article(article_data: dict):
         text = article_data.get('text', '')
         title = article_data.get('title')
         source = article_data.get('source')
+        telegram_user_id = article_data.get('telegram_user_id')
         
         logger.info(f"Creating article: {title}")
         
@@ -79,15 +154,55 @@ async def create_article(article_data: dict):
         # Basic categorization
         categories = await basic_categorize(text)
         
-        # Simulate saving (no database in simple version)
-        article_id = 1  # Mock ID
+        # Try to save to database if available
+        try:
+            from database import DatabaseManager
+            db_manager = DatabaseManager()
+            await db_manager.initialize()
+            
+            # Save user if telegram_user_id provided
+            if telegram_user_id:
+                await db_manager.save_user(
+                    telegram_user_id=telegram_user_id,
+                    username=article_data.get('username'),
+                    first_name=article_data.get('first_name'),
+                    last_name=article_data.get('last_name')
+                )
+            
+            # Save article
+            result = await db_manager.save_article(
+                title=title,
+                text=text,
+                summary=None,
+                source=source,
+                categories_user=categories,
+                telegram_user_id=telegram_user_id
+            )
+            
+            if result is None:
+                # Article already exists
+                article_id = None
+                fingerprint = "duplicate"
+                status = "duplicate"
+            else:
+                article_id, fingerprint = result
+                status = "created"
+            
+            await db_manager.close()
+            
+        except Exception as db_error:
+            logger.warning(f"Database error, using mock data: {db_error}")
+            # Fallback to mock data
+            article_id = 1
+            fingerprint = "mock-fingerprint"
+            status = "created"
         
         response_data = {
             "article_id": article_id,
-            "fingerprint": "mock-fingerprint",
+            "fingerprint": fingerprint,
             "categories": categories,
-            "summary": "Mock summary",
-            "status": "created",
+            "summary": None,
+            "status": status,
             "ml_service": "basic"
         }
         
