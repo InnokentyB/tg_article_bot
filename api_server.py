@@ -11,12 +11,43 @@ from fastapi.middleware.cors import CORSMiddleware
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Global variables
+db_manager = None
+
 # Create FastAPI app
 app = FastAPI(
     title="Railway API",
     description="API for Railway deployment",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup"""
+    global db_manager
+    
+    logger.info("Starting up API server...")
+    
+    # Try to initialize database
+    try:
+        from database import DatabaseManager
+        db_manager = DatabaseManager()
+        await db_manager.initialize()
+        logger.info("✅ Database initialized successfully")
+    except Exception as e:
+        logger.warning(f"⚠️ Database initialization failed: {e}")
+        db_manager = None
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    global db_manager
+    
+    logger.info("Shutting down API server...")
+    
+    if db_manager:
+        await db_manager.close()
+        logger.info("Database connection closed")
 
 # Add CORS middleware
 app.add_middleware(
@@ -66,21 +97,16 @@ async def test_endpoint():
 @app.get("/articles")
 async def get_articles(limit: int = 10, offset: int = 0):
     """Get articles"""
+    global db_manager
+    
     try:
-        # Try to get from database if available
-        try:
-            from database import DatabaseManager
-            db_manager = DatabaseManager()
-            await db_manager.initialize()
-            
+        if db_manager:
+            # Use global database manager
             articles = await db_manager.get_articles(limit=limit, offset=offset)
-            await db_manager.close()
-            
             return {"articles": articles, "count": len(articles)}
-            
-        except Exception as db_error:
-            logger.warning(f"Database error, using mock data: {db_error}")
+        else:
             # Fallback to mock data
+            logger.warning("Database not available, using mock data")
             return {
                 "articles": [
                     {
@@ -102,29 +128,35 @@ async def get_articles(limit: int = 10, offset: int = 0):
 async def get_statistics():
     """Get statistics"""
     try:
-        # Try to get from database if available
-        try:
-            from database import DatabaseManager
-            db_manager = DatabaseManager()
-            await db_manager.initialize()
-            
-            async with db_manager.pool.acquire() as conn:
-                articles_count = await conn.fetchval("SELECT COUNT(*) FROM articles")
-                users_count = await conn.fetchval("SELECT COUNT(*) FROM users")
-            
-            await db_manager.close()
-            
-            return {
-                "articles_count": articles_count,
-                "users_count": users_count,
-                "ml_service": "basic",
-                "database": "enabled",
-                "status": "ok"
-            }
-            
-        except Exception as db_error:
-            logger.warning(f"Database error, using mock data: {db_error}")
-            # Fallback to mock data
+        global db_manager
+        
+        if db_manager:
+            try:
+                async with db_manager.pool.acquire() as conn:
+                    articles_count = await conn.fetchval("SELECT COUNT(*) FROM articles")
+                    users_count = await conn.fetchval("SELECT COUNT(*) FROM users")
+                
+                return {
+                    "articles_count": articles_count,
+                    "users_count": users_count,
+                    "ml_service": "basic",
+                    "database": "enabled",
+                    "status": "ok"
+                }
+                
+            except Exception as db_error:
+                logger.warning(f"Database error, using mock data: {db_error}")
+                # Fallback to mock data
+                return {
+                    "articles_count": 1,
+                    "users_count": 1,
+                    "ml_service": "basic",
+                    "database": "disabled",
+                    "status": "ok"
+                }
+        else:
+            # Database not available, use mock data
+            logger.warning("Database not available, using mock data")
             return {
                 "articles_count": 1,
                 "users_count": 1,
@@ -155,44 +187,47 @@ async def create_article(article_data: dict):
         categories = await basic_categorize(text)
         
         # Try to save to database if available
-        try:
-            from database import DatabaseManager
-            db_manager = DatabaseManager()
-            await db_manager.initialize()
-            
-            # Save user if telegram_user_id provided
-            if telegram_user_id:
-                await db_manager.save_user(
-                    telegram_user_id=telegram_user_id,
-                    username=article_data.get('username'),
-                    first_name=article_data.get('first_name'),
-                    last_name=article_data.get('last_name')
+        global db_manager
+        
+        if db_manager:
+            try:
+                # Save user if telegram_user_id provided
+                if telegram_user_id:
+                    await db_manager.save_user(
+                        telegram_user_id=telegram_user_id,
+                        username=article_data.get('username'),
+                        first_name=article_data.get('first_name'),
+                        last_name=article_data.get('last_name')
+                    )
+                
+                # Save article
+                result = await db_manager.save_article(
+                    title=title,
+                    text=text,
+                    summary=None,
+                    source=source,
+                    categories_user=categories,
+                    telegram_user_id=telegram_user_id
                 )
-            
-            # Save article
-            result = await db_manager.save_article(
-                title=title,
-                text=text,
-                summary=None,
-                source=source,
-                categories_user=categories,
-                telegram_user_id=telegram_user_id
-            )
-            
-            if result is None:
-                # Article already exists
-                article_id = None
-                fingerprint = "duplicate"
-                status = "duplicate"
-            else:
-                article_id, fingerprint = result
+                
+                if result is None:
+                    # Article already exists
+                    article_id = None
+                    fingerprint = "duplicate"
+                    status = "duplicate"
+                else:
+                    article_id, fingerprint = result
+                    status = "created"
+                
+            except Exception as db_error:
+                logger.warning(f"Database error, using mock data: {db_error}")
+                # Fallback to mock data
+                article_id = 1
+                fingerprint = "mock-fingerprint"
                 status = "created"
-            
-            await db_manager.close()
-            
-        except Exception as db_error:
-            logger.warning(f"Database error, using mock data: {db_error}")
-            # Fallback to mock data
+        else:
+            # Database not available, use mock data
+            logger.warning("Database not available, using mock data")
             article_id = 1
             fingerprint = "mock-fingerprint"
             status = "created"
