@@ -18,7 +18,7 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Копируем и устанавливаем Python зависимости
-COPY requirements.prod.txt requirements.txt
+COPY requirements.simple.txt requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
@@ -54,4 +54,4 @@ USER app
 EXPOSE 5000
 
 # Команда по умолчанию
-CMD ["python", "api_server_railway.py"]
+CMD ["python", "api_server_simple.py"]
