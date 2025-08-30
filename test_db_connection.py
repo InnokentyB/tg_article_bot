@@ -1,77 +1,89 @@
 #!/usr/bin/env python3
 """
-Тест подключения к базе данных
+Тест подключения к базе данных Railway
 """
 import asyncio
 import asyncpg
 import os
+import logging
 
-async def test_database_connection():
-    """Тестирует подключение к PostgreSQL"""
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+async def test_db_connection():
+    """Test database connection"""
     try:
-        # Загружаем переменные окружения
-        database_url = "postgresql://article_bot:article_bot_password@localhost:5432/article_bot"
+        # Railway database URL
+        database_url = "postgresql://postgres:VHpCVRLydkLVFLlJrqQGnnpEoRqBlfwD@tg-article-bot-db.railway.internal:5432/railway"
         
-        print("🔌 Подключение к базе данных...")
+        logger.info("Testing Railway database connection...")
+        logger.info(f"Database URL: {database_url[:30]}...")
+        
+        # Try to connect
         conn = await asyncpg.connect(database_url)
         
-        print("✅ Подключение успешно!")
+        # Test connection
+        version = await conn.fetchval("SELECT version()")
+        logger.info(f"✅ Connected to PostgreSQL: {version}")
         
-        # Проверяем таблицы
+        # Check if tables exist
         tables = await conn.fetch("""
             SELECT table_name 
             FROM information_schema.tables 
             WHERE table_schema = 'public'
         """)
         
-        print(f"📋 Найдено таблиц: {len(tables)}")
-        for table in tables:
-            print(f"   - {table['table_name']}")
+        existing_tables = [row['table_name'] for row in tables]
+        logger.info(f"📋 Existing tables: {existing_tables}")
         
-        # Проверяем количество записей
-        articles_count = await conn.fetchval("SELECT COUNT(*) FROM articles")
+        # Test data insertion
+        logger.info("🧪 Testing data insertion...")
+        
+        # Insert test user
+        user_id = await conn.fetchval("""
+            INSERT INTO users (telegram_user_id, username, first_name, last_name)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (telegram_user_id) DO UPDATE SET
+                username = EXCLUDED.username,
+                first_name = EXCLUDED.first_name,
+                last_name = EXCLUDED.last_name,
+                updated_at = NOW()
+            RETURNING id
+        """, 999999999, "test_user_db", "Test", "Database")
+        
+        logger.info(f"✅ Test user created/updated with ID: {user_id}")
+        
+        # Insert test article
+        article_id = await conn.fetchval("""
+            INSERT INTO articles (title, text, source, telegram_user_id, categories_user)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (fingerprint) DO NOTHING
+            RETURNING id
+        """, "Test DB Article", "This is a test article for database connection testing.", "test_db", 999999999, ["Technology", "Test"])
+        
+        if article_id:
+            logger.info(f"✅ Test article created with ID: {article_id}")
+        else:
+            logger.info("⚠️ Test article already exists (duplicate fingerprint)")
+        
+        # Get statistics
         users_count = await conn.fetchval("SELECT COUNT(*) FROM users")
+        articles_count = await conn.fetchval("SELECT COUNT(*) FROM articles")
         
-        print(f"📊 Статистика:")
-        print(f"   - Статей: {articles_count}")
-        print(f"   - Пользователей: {users_count}")
+        logger.info(f"📊 Database statistics:")
+        logger.info(f"   Users: {users_count}")
+        logger.info(f"   Articles: {articles_count}")
         
         await conn.close()
-        print("✅ Тест завершен успешно!")
+        logger.info("✅ Database connection test completed successfully!")
+        return True
         
     except Exception as e:
-        print(f"❌ Ошибка подключения: {e}")
-
-async def test_redis_connection():
-    """Тестирует подключение к Redis"""
-    try:
-        import redis.asyncio as redis
-        
-        print("\n🔌 Подключение к Redis...")
-        r = redis.Redis(host='localhost', port=6379, decode_responses=True)
-        
-        # Тестируем ping
-        await r.ping()
-        print("✅ Redis подключение успешно!")
-        
-        # Тестируем запись/чтение
-        await r.set('test_key', 'test_value')
-        value = await r.get('test_key')
-        print(f"✅ Redis тест записи/чтения: {value}")
-        
-        await r.close()
-        
-    except Exception as e:
-        print(f"❌ Ошибка Redis: {e}")
-
-async def main():
-    """Основная функция"""
-    print("🧪 Тестирование подключений к сервисам...\n")
-    
-    await test_database_connection()
-    await test_redis_connection()
-    
-    print("\n🎉 Все тесты завершены!")
+        logger.error(f"❌ Database connection failed: {e}")
+        return False
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    success = asyncio.run(test_db_connection())
+    if not success:
+        exit(1)
