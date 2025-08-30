@@ -182,6 +182,49 @@ async def get_statistics():
         logger.error(f"Error getting statistics: {e}")
         return {"error": str(e)}
 
+@app.get("/debug/database")
+async def debug_database():
+    """Debug database connection and tables"""
+    global db_manager
+    
+    try:
+        if not db_manager:
+            return {
+                "status": "error",
+                "message": "Database manager not initialized",
+                "database_url": "set" if os.getenv("DATABASE_URL") else "not set"
+            }
+        
+        # Test database connection
+        async with db_manager.pool.acquire() as conn:
+            # Check tables
+            tables = await conn.fetch("""
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public'
+            """)
+            
+            existing_tables = [row['table_name'] for row in tables]
+            
+            # Get counts
+            users_count = await conn.fetchval("SELECT COUNT(*) FROM users")
+            articles_count = await conn.fetchval("SELECT COUNT(*) FROM articles")
+            
+            return {
+                "status": "connected",
+                "tables": existing_tables,
+                "users_count": users_count,
+                "articles_count": articles_count,
+                "database_url": "set" if os.getenv("DATABASE_URL") else "not set"
+            }
+            
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+            "database_url": "set" if os.getenv("DATABASE_URL") else "not set"
+        }
+
 @app.post("/articles")
 async def create_article(article_data: dict):
     """Create new article with basic categorization"""
