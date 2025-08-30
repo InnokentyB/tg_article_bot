@@ -93,12 +93,18 @@ async def api_health_check():
 @app.get("/test")
 async def test_endpoint():
     """Test endpoint"""
+    global db_manager
+    
     logger.info("Test endpoint called")
+    
+    db_status = "connected" if db_manager else "not connected"
+    
     return {
         "message": "Test endpoint works!",
         "port": os.getenv("PORT", "not set"),
         "database_url": "set" if os.getenv("DATABASE_URL") else "not set",
-        "railway_environment": os.getenv("RAILWAY_ENVIRONMENT", "not set")
+        "railway_environment": os.getenv("RAILWAY_ENVIRONMENT", "not set"),
+        "database_status": db_status
     }
 
 @app.get("/articles")
