@@ -31,6 +31,12 @@ async def lifespan(app: FastAPI):
     
     logger.info("Initializing full Railway API server...")
     
+    # Check Railway services availability
+    await check_railway_services()
+    
+    # Run database migrations
+    await run_database_migrations()
+    
     # Initialize database
     db_manager = DatabaseManager()
     await db_manager.initialize()
@@ -46,6 +52,51 @@ async def lifespan(app: FastAPI):
     await db_manager.close()
     await text_extractor.close()
     logger.info("Full Railway API server shutdown")
+
+async def check_railway_services():
+    """Check availability of Railway services"""
+    logger.info("Checking Railway services...")
+    
+    # Check database
+    database_url = os.getenv('DATABASE_URL')
+    if not database_url:
+        logger.warning("DATABASE_URL not found - database service may not be available")
+    else:
+        logger.info("Database service: AVAILABLE")
+    
+    # Check Redis
+    redis_url = os.getenv('REDIS_URL')
+    if not redis_url:
+        logger.warning("REDIS_URL not found - Redis service may not be available")
+    else:
+        logger.info("Redis service: AVAILABLE")
+    
+    # Check other Railway services
+    railway_services = [
+        ('DATABASE_URL', 'PostgreSQL Database'),
+        ('REDIS_URL', 'Redis Cache'),
+        ('PORT', 'Application Port')
+    ]
+    
+    for env_var, service_name in railway_services:
+        if os.getenv(env_var):
+            logger.info(f"✓ {service_name}: {env_var} is set")
+        else:
+            logger.warning(f"⚠ {service_name}: {env_var} not found")
+
+async def run_database_migrations():
+    """Run database migrations"""
+    try:
+        from migrations import MigrationManager
+        logger.info("Running database migrations...")
+        manager = MigrationManager()
+        success = await manager.run_migrations()
+        if success:
+            logger.info("Database migrations completed successfully!")
+        else:
+            logger.error("Database migrations failed!")
+    except Exception as e:
+        logger.error(f"Failed to run migrations: {e}")
 
 # Create FastAPI app
 app = FastAPI(
@@ -298,6 +349,131 @@ async def get_statistics():
 async def get_stats():
     """Get basic statistics (alias for /statistics)"""
     return await get_statistics()
+
+@app.get("/articles/{article_id}/reactions")
+async def get_article_reactions(article_id: int):
+    """Get reactions for specific article"""
+    try:
+        async with db_manager.pool.acquire() as conn:
+            # Check if article exists
+            article = await conn.fetchrow("SELECT id, title FROM articles WHERE id = $1", article_id)
+            if not article:
+                raise HTTPException(status_code=404, detail="Article not found")
+            
+            # Get reactions
+            reactions = await conn.fetch("""
+                SELECT reaction_type, COUNT(*) as count
+                FROM article_reactions 
+                WHERE article_id = $1 
+                GROUP BY reaction_type
+            """, article_id)
+            
+            return {
+                "article_id": article_id,
+                "article_title": article['title'],
+                "reactions": [dict(row) for row in reactions]
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting reactions for article {article_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/articles/{article_id}/reactions")
+async def add_article_reaction(article_id: int, reaction_data: dict):
+    """Add reaction to article"""
+    try:
+        reaction_type = reaction_data.get('reaction_type')
+        telegram_user_id = reaction_data.get('telegram_user_id')
+        
+        if not reaction_type or not telegram_user_id:
+            raise HTTPException(status_code=400, detail="reaction_type and telegram_user_id are required")
+        
+        async with db_manager.pool.acquire() as conn:
+            # Check if article exists
+            article = await conn.fetchrow("SELECT id FROM articles WHERE id = $1", article_id)
+            if not article:
+                raise HTTPException(status_code=404, detail="Article not found")
+            
+            # Add reaction (upsert)
+            await conn.execute("""
+                INSERT INTO article_reactions (article_id, telegram_user_id, reaction_type)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (article_id, telegram_user_id, reaction_type) DO NOTHING
+            """, article_id, telegram_user_id, reaction_type)
+            
+            return {"message": "Reaction added successfully"}
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding reaction to article {article_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/articles/{article_id}/external-tracking")
+async def get_external_tracking(article_id: int):
+    """Get external tracking for article"""
+    try:
+        async with db_manager.pool.acquire() as conn:
+            # Check if article exists
+            article = await conn.fetchrow("SELECT id, title FROM articles WHERE id = $1", article_id)
+            if not article:
+                raise HTTPException(status_code=404, detail="Article not found")
+            
+            # Get external tracking
+            tracking = await conn.fetch("""
+                SELECT * FROM external_tracking 
+                WHERE article_id = $1 
+                ORDER BY created_at DESC
+            """, article_id)
+            
+            return {
+                "article_id": article_id,
+                "article_title": article['title'],
+                "tracking": [dict(row) for row in tracking]
+            }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting external tracking for article {article_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/articles/{article_id}/external-tracking")
+async def add_external_tracking(article_id: int, tracking_data: dict):
+    """Add external tracking for article"""
+    try:
+        external_url = tracking_data.get('external_url')
+        tracking_type = tracking_data.get('tracking_type')
+        external_title = tracking_data.get('external_title')
+        external_summary = tracking_data.get('external_summary')
+        external_id = tracking_data.get('external_id')
+        metadata = tracking_data.get('metadata', {})
+        
+        if not external_url or not tracking_type:
+            raise HTTPException(status_code=400, detail="external_url and tracking_type are required")
+        
+        async with db_manager.pool.acquire() as conn:
+            # Check if article exists
+            article = await conn.fetchrow("SELECT id FROM articles WHERE id = $1", article_id)
+            if not article:
+                raise HTTPException(status_code=404, detail="Article not found")
+            
+            # Add tracking
+            await conn.execute("""
+                INSERT INTO external_tracking 
+                (article_id, external_url, tracking_type, external_title, external_summary, external_id, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+            """, article_id, external_url, tracking_type, external_title, external_summary, external_id, metadata)
+            
+            return {"message": "External tracking added successfully"}
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding external tracking to article {article_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 async def basic_categorize(text: str) -> list:
     """Basic categorization without ML service"""
