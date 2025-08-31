@@ -168,3 +168,13 @@ def check_rate_limit(request: Request):
 async def rate_limit_middleware(request: Request):
     """Rate limiting middleware"""
     check_rate_limit(request)
+
+def get_user_by_username(username: str) -> Optional[Dict[str, Any]]:
+    """Get user by username from fake database"""
+    if username in fake_users_db:
+        return fake_users_db[username]
+    return None
+
+def get_all_users() -> list:
+    """Get all users from fake database"""
+    return list(fake_users_db.values())
