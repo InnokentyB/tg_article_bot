@@ -199,11 +199,16 @@ async def dashboard(
     if user and user.get("role") == "admin":
         recent_users = get_all_users()[:5]
     
+    # Get all users for stats
+    all_users = get_all_users()
+    
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "user": user,
         "stats": stats,
-        "recent_users": recent_users
+        "users": all_users,
+        "recent_users": recent_users,
+        "is_admin": user and user.get("role") == "admin"
     })
 
 @app.get("/users", response_class=HTMLResponse)
