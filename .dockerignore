@@ -1,0 +1,53 @@
+# Исключаем ненужные файлы из Docker сборки
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git/
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
+
+# Исключаем тяжелые файлы
+*.db
+*.sqlite
+*.sqlite3
+logs/
+*.log
+
+# Исключаем файлы, не нужные для веб-админки
+api_server*.py
+telegram_bot*.py
+simple_*.py
+run_bot.py
+test_*.py
+*.md
+.gitignore
+README.md
+Dockerfile*
+docker-compose*
+railway.*
+render.yaml
+env.example
+.env
+
+# Исключаем ML и другие тяжелые зависимости
+ml-service/
+ml-service-light/
+*.model
+*.pkl
+*.joblib
