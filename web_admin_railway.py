@@ -4,6 +4,7 @@
 """
 import os
 import logging
+import jwt
 from fastapi import FastAPI, Request, Form, HTTPException, Depends, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -46,9 +47,27 @@ templates = Jinja2Templates(directory="templates")
 # API base URL - Railway environment
 API_BASE_URL = os.getenv("API_BASE_URL", "https://tg-article-bot-api-production-12d6.up.railway.app")
 
-def create_mock_token(token: str) -> Dict[str, Any]:
-    """Create mock token for auth dependency"""
-    return {"access_token": token}
+# JWT Secret Key
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
+
+def get_current_user(token: str) -> Optional[Dict[str, Any]]:
+    """Get current user from token"""
+    if not token:
+        return None
+    
+    try:
+        # Decode JWT token
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        username = payload.get("sub")
+        if not username:
+            return None
+        
+        # Get user from database
+        user = get_user_by_username(username)
+        return user
+    except Exception as e:
+        logger.error(f"Error decoding token: {e}")
+        return None
 
 def get_articles(page: int = 1, per_page: int = 20):
     """Get articles from API or return mock data"""
@@ -120,10 +139,18 @@ async def login(
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(
     request: Request,
-    current_user: Dict = Depends(lambda: get_current_user(Cookie("access_token")))
+    access_token: Optional[str] = Cookie(None)
 ):
     """Dashboard page"""
-    if not current_user:
+    if not access_token:
+        return RedirectResponse(url="/", status_code=302)
+    
+    try:
+        current_user = get_current_user(access_token)
+        if not current_user:
+            return RedirectResponse(url="/", status_code=302)
+    except Exception as e:
+        logger.error(f"Error getting current user: {e}")
         return RedirectResponse(url="/", status_code=302)
     
     # Get user info
@@ -151,48 +178,62 @@ async def dashboard(
 @app.get("/users", response_class=HTMLResponse)
 async def users_page(
     request: Request,
-    current_user: Dict = Depends(lambda: get_current_user(Cookie("access_token")))
+    access_token: Optional[str] = Cookie(None)
 ):
     """Users management page (admin only)"""
-    if not current_user:
+    if not access_token:
         return RedirectResponse(url="/", status_code=302)
     
-    user = get_user_by_username(current_user["username"])
-    if not user or user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    all_users = get_all_users()
-    return templates.TemplateResponse("users.html", {
-        "request": request,
-        "user": user,
-        "users": all_users
-    })
+    try:
+        current_user = get_current_user(access_token)
+        if not current_user:
+            return RedirectResponse(url="/", status_code=302)
+        
+        if current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        all_users = get_all_users()
+        return templates.TemplateResponse("users.html", {
+            "request": request,
+            "user": current_user,
+            "users": all_users
+        })
+    except Exception as e:
+        logger.error(f"Error in users page: {e}")
+        return RedirectResponse(url="/", status_code=302)
 
 @app.get("/articles", response_class=HTMLResponse)
 async def articles_page(
     request: Request,
     page: int = 1,
     per_page: int = 20,
-    current_user: Dict = Depends(lambda: get_current_user(Cookie("access_token")))
+    access_token: Optional[str] = Cookie(None)
 ):
     """Articles page"""
-    if not current_user:
+    if not access_token:
         return RedirectResponse(url="/", status_code=302)
     
-    user = get_user_by_username(current_user["username"])
-    articles_data = get_articles(page, per_page)
-    
-    return templates.TemplateResponse("articles.html", {
-        "request": request,
-        "user": user,
-        "articles": articles_data["articles"],
-        "pagination": {
-            "page": page,
-            "per_page": per_page,
-            "total": articles_data["total"],
-            "pages": articles_data["pages"]
-        }
-    })
+    try:
+        current_user = get_current_user(access_token)
+        if not current_user:
+            return RedirectResponse(url="/", status_code=302)
+        
+        articles_data = get_articles(page, per_page)
+        
+        return templates.TemplateResponse("articles.html", {
+            "request": request,
+            "user": current_user,
+            "articles": articles_data["articles"],
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": articles_data["total"],
+                "pages": articles_data["pages"]
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error in articles page: {e}")
+        return RedirectResponse(url="/", status_code=302)
 
 @app.post("/users/add")
 async def add_user(
@@ -200,50 +241,62 @@ async def add_user(
     username: str = Form(...),
     password: str = Form(...),
     role: str = Form("user"),
-    current_user: Dict = Depends(lambda: get_current_user(Cookie("access_token")))
+    access_token: Optional[str] = Cookie(None)
 ):
     """Add new user (admin only)"""
-    if not current_user:
+    if not access_token:
         return RedirectResponse(url="/", status_code=302)
     
-    user = get_user_by_username(current_user["username"])
-    if not user or user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    # Add user logic here
-    return RedirectResponse(url="/users", status_code=302)
+    try:
+        current_user = get_current_user(access_token)
+        if not current_user or current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        # Add user logic here
+        return RedirectResponse(url="/users", status_code=302)
+    except Exception as e:
+        logger.error(f"Error adding user: {e}")
+        return RedirectResponse(url="/users", status_code=302)
 
 @app.get("/users/{username}/toggle")
 async def toggle_user(
     username: str,
-    current_user: Dict = Depends(lambda: get_current_user(Cookie("access_token")))
+    access_token: Optional[str] = Cookie(None)
 ):
     """Toggle user status (admin only)"""
-    if not current_user:
+    if not access_token:
         return RedirectResponse(url="/", status_code=302)
     
-    user = get_user_by_username(current_user["username"])
-    if not user or user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    # Toggle user logic here
-    return RedirectResponse(url="/users", status_code=302)
+    try:
+        current_user = get_current_user(access_token)
+        if not current_user or current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        # Toggle user logic here
+        return RedirectResponse(url="/users", status_code=302)
+    except Exception as e:
+        logger.error(f"Error toggling user: {e}")
+        return RedirectResponse(url="/users", status_code=302)
 
 @app.get("/users/{username}/delete")
 async def delete_user(
     username: str,
-    current_user: Dict = Depends(lambda: get_current_user(Cookie("access_token")))
+    access_token: Optional[str] = Cookie(None)
 ):
     """Delete user (admin only)"""
-    if not current_user:
+    if not access_token:
         return RedirectResponse(url="/", status_code=302)
     
-    user = get_user_by_username(current_user["username"])
-    if not user or user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    # Delete user logic here
-    return RedirectResponse(url="/users", status_code=302)
+    try:
+        current_user = get_current_user(access_token)
+        if not current_user or current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        # Delete user logic here
+        return RedirectResponse(url="/users", status_code=302)
+    except Exception as e:
+        logger.error(f"Error deleting user: {e}")
+        return RedirectResponse(url="/users", status_code=302)
 
 @app.get("/logout")
 async def logout():
@@ -254,17 +307,21 @@ async def logout():
 
 @app.get("/api/users")
 async def api_users(
-    current_user: Dict = Depends(lambda: get_current_user(Cookie("access_token")))
+    access_token: Optional[str] = Cookie(None)
 ):
     """API endpoint for users (admin only)"""
-    if not current_user:
+    if not access_token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     
-    user = get_user_by_username(current_user["username"])
-    if not user or user.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    return {"users": get_all_users()}
+    try:
+        current_user = get_current_user(access_token)
+        if not current_user or current_user.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        return {"users": get_all_users()}
+    except Exception as e:
+        logger.error(f"Error in API users: {e}")
+        raise HTTPException(status_code=401, detail="Not authenticated")
 
 @app.get("/health")
 async def health_check():
