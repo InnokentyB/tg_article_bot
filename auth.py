@@ -38,6 +38,7 @@ class User(BaseModel):
     email: Optional[str] = None
     full_name: Optional[str] = None
     disabled: Optional[bool] = None
+    hashed_password: Optional[str] = None
 
 # Mock user database (in production use real database)
 fake_users_db = {
