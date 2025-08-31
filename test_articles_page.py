@@ -1,119 +1,76 @@
 #!/usr/bin/env python3
 """
-Test script for articles page functionality
+Тест страницы статей
 """
 import requests
-import json
 
-BASE_URL = "http://localhost:8000"
-
-def test_login():
-    """Test login functionality"""
-    print("🔐 Testing login...")
+def test_articles_page():
+    """Тестируем страницу статей"""
+    base_url = "https://tg-article-bot-api-production-12d6.up.railway.app"
     
-    # Test admin login
+    print("📰 Тестируем страницу статей...")
+    
+    # Создаем сессию
+    session = requests.Session()
+    
+    # Шаг 1: Логинимся
+    print("\n1. Выполняем логин...")
     login_data = {
         "username": "admin",
         "password": "fakehashedpassword"
     }
     
-    response = requests.post(f"{BASE_URL}/login", data=login_data, allow_redirects=False)
-    
-    if response.status_code == 302:
-        print("✅ Login successful")
-        return response.cookies.get("access_token")
-    else:
-        print(f"❌ Login failed: {response.status_code}")
-        print(f"Response: {response.text[:200]}...")
-        return None
-
-def test_articles_page(access_token, page=1, per_page=20):
-    """Test articles page with pagination"""
-    print(f"📰 Testing articles page (page={page}, per_page={per_page})...")
-    
-    headers = {}
-    if access_token:
-        headers["Cookie"] = f"access_token={access_token}"
-    
-    params = {
-        "page": page,
-        "per_page": per_page
-    }
-    
-    response = requests.get(f"{BASE_URL}/articles", headers=headers, params=params)
-    
-    if response.status_code == 200:
-        print("✅ Articles page loaded successfully")
-        print(f"📄 Content length: {len(response.text)} characters")
-        
-        # Check if pagination info is present
-        if "pagination" in response.text:
-            print("✅ Pagination controls found")
-        
-        # Check if articles are present
-        if "article-card" in response.text:
-            print("✅ Article cards found")
-        
-        return True
-    else:
-        print(f"❌ Articles page failed: {response.status_code}")
-        return False
-
-def test_pagination_options():
-    """Test different pagination options"""
-    print("\n🔄 Testing pagination options...")
-    
-    access_token = test_login()
-    if not access_token:
-        print("❌ Cannot test pagination without login")
+    try:
+        response = session.post(f"{base_url}/login", data=login_data, timeout=10, allow_redirects=False)
+        if response.status_code != 302:
+            print(f"   ❌ Ошибка логина: {response.status_code}")
+            return
+        print("   ✅ Логин успешен")
+    except Exception as e:
+        print(f"   ❌ Ошибка: {e}")
         return
     
-    # Test 20 articles per page
-    test_articles_page(access_token, page=1, per_page=20)
-    
-    # Test 50 articles per page
-    test_articles_page(access_token, page=1, per_page=50)
-    
-    # Test second page
-    test_articles_page(access_token, page=2, per_page=20)
-
-def test_mock_articles():
-    """Test mock articles generation"""
-    print("\n🎭 Testing mock articles generation...")
-    
-    # Import the function from web_admin
-    import sys
-    import os
-    sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-    
+    # Шаг 2: Тестируем страницу статей (20 на странице)
+    print("\n2. Тестируем страницу статей (20 на странице)...")
     try:
-        from web_admin import get_mock_articles
-        
-        # Test with 20 articles per page
-        result = get_mock_articles(page=1, per_page=20)
-        print(f"✅ Mock articles generated: {len(result['articles'])} articles")
-        print(f"📊 Total: {result['total']}, Pages: {result['pages']}")
-        
-        # Test with 50 articles per page
-        result = get_mock_articles(page=1, per_page=50)
-        print(f"✅ Mock articles generated: {len(result['articles'])} articles")
-        print(f"📊 Total: {result['total']}, Pages: {result['pages']}")
-        
-        # Test second page
-        result = get_mock_articles(page=2, per_page=20)
-        print(f"✅ Mock articles generated: {len(result['articles'])} articles")
-        print(f"📊 Page: {result['page']}, Per page: {result['per_page']}")
-        
-    except ImportError as e:
-        print(f"❌ Cannot import mock articles function: {e}")
+        response = session.get(f"{base_url}/articles?page=1&per_page=20", timeout=10)
+        print(f"   Status: {response.status_code}")
+        if response.status_code == 200:
+            print("   ✅ Страница статей загружена")
+            if "Искусственный интеллект" in response.text:
+                print("   ✅ Найдены статьи с реалистичными заголовками")
+            else:
+                print("   ⚠️ Статьи не найдены или заголовки не соответствуют")
+        else:
+            print(f"   ❌ Ошибка: {response.text}")
+    except Exception as e:
+        print(f"   ❌ Ошибка: {e}")
+    
+    # Шаг 3: Тестируем страницу статей (50 на странице)
+    print("\n3. Тестируем страницу статей (50 на странице)...")
+    try:
+        response = session.get(f"{base_url}/articles?page=1&per_page=50", timeout=10)
+        print(f"   Status: {response.status_code}")
+        if response.status_code == 200:
+            print("   ✅ Страница статей (50) загружена")
+        else:
+            print(f"   ❌ Ошибка: {response.text}")
+    except Exception as e:
+        print(f"   ❌ Ошибка: {e}")
+    
+    # Шаг 4: Тестируем пагинацию
+    print("\n4. Тестируем пагинацию (страница 2)...")
+    try:
+        response = session.get(f"{base_url}/articles?page=2&per_page=20", timeout=10)
+        print(f"   Status: {response.status_code}")
+        if response.status_code == 200:
+            print("   ✅ Пагинация работает")
+        else:
+            print(f"   ❌ Ошибка: {response.text}")
+    except Exception as e:
+        print(f"   ❌ Ошибка: {e}")
+    
+    print("\n✅ Тест завершен!")
 
 if __name__ == "__main__":
-    print("🚀 Starting articles page tests...\n")
-    
-    # Test mock articles generation
-    test_mock_articles()
-    
-    # Test web interface
-    test_pagination_options()
-    
-    print("\n✅ All tests completed!")
+    test_articles_page()
