@@ -38,6 +38,53 @@ async def startup_event():
         from database import DatabaseManager
         db_manager = DatabaseManager()
         await db_manager.initialize()
+        
+        # Try to create tables if they don't exist
+        try:
+            async with db_manager.pool.acquire() as conn:
+                # Create users table
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        id SERIAL PRIMARY KEY,
+                        telegram_user_id BIGINT UNIQUE NOT NULL,
+                        username VARCHAR(100),
+                        first_name VARCHAR(100),
+                        last_name VARCHAR(100),
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    )
+                """)
+                
+                # Create articles table
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS articles (
+                        id SERIAL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        summary TEXT,
+                        fingerprint VARCHAR(64) UNIQUE,
+                        source VARCHAR(500),
+                        author VARCHAR(200),
+                        original_link TEXT,
+                        is_translated BOOLEAN DEFAULT FALSE,
+                        categories_user TEXT[],
+                        categories_auto TEXT[],
+                        categories_advanced JSONB,
+                        language VARCHAR(10),
+                        comments_count INTEGER DEFAULT 0,
+                        likes_count INTEGER DEFAULT 0,
+                        views_count INTEGER DEFAULT 0,
+                        telegram_user_id BIGINT REFERENCES users(telegram_user_id) ON DELETE CASCADE,
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+                    )
+                """)
+                
+                logger.info("✅ Database tables created successfully")
+                
+        except Exception as table_error:
+            logger.warning(f"⚠️ Table creation failed: {table_error}")
+        
         logger.info("✅ Database initialized successfully")
     except Exception as e:
         logger.warning(f"⚠️ Database initialization failed: {e}")
