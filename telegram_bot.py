@@ -5,6 +5,13 @@ import asyncio
 import logging
 import os
 from typing import Optional
+
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, MessageReactionUpdated, MessageReactionCountUpdated
