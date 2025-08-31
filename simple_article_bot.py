@@ -89,7 +89,7 @@ class SimpleArticleBot:
         ))
         builder.add(types.InlineKeyboardButton(
             text="🌐 Веб-админка", 
-            url="http://localhost:8000"
+            url="https://tg-article-bot-api-production-12d6.up.railway.app"
         ))
         
         await message.answer(welcome_text, reply_markup=builder.as_markup())
@@ -119,7 +119,7 @@ class SimpleArticleBot:
 
 📱 **Веб-интерфейс:**
 Для администраторов доступна веб-админка:
-http://localhost:8000
+https://tg-article-bot-api-production-12d6.up.railway.app
 
 🔧 **Поддержка:**
 При возникновении проблем обратитесь к администратору.
@@ -162,7 +162,7 @@ http://localhost:8000
         ))
         builder.add(types.InlineKeyboardButton(
             text="🌐 Веб-статистика", 
-            url="http://localhost:8000/dashboard"
+            url="https://tg-article-bot-api-production-12d6.up.railway.app/dashboard"
         ))
         
         await message.answer(stats_text, reply_markup=builder.as_markup())
@@ -219,7 +219,7 @@ http://localhost:8000
         ))
         builder.add(types.InlineKeyboardButton(
             text="🌐 Веб-админка", 
-            url="http://localhost:8000"
+            url="https://tg-article-bot-api-production-12d6.up.railway.app"
         ))
         
         await message.answer(result_text, reply_markup=builder.as_markup())
