@@ -15,7 +15,10 @@ COPY requirements.web-admin.txt requirements.txt
 COPY auth.py .
 COPY web_admin_railway.py .
 COPY templates/ templates/
-COPY static/ static/
+
+# Создаем папку static и копируем файлы (если есть)
+RUN mkdir -p static
+COPY static/ static/ || true
 
 # Устанавливаем Python зависимости
 RUN pip install --no-cache-dir --upgrade pip && \
