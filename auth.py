@@ -39,6 +39,7 @@ class User(BaseModel):
     full_name: Optional[str] = None
     disabled: Optional[bool] = None
     hashed_password: Optional[str] = None
+    role: str = "user"  # "user" or "admin"
 
 # Mock user database (in production use real database)
 fake_users_db = {
@@ -48,6 +49,15 @@ fake_users_db = {
         "email": "admin@example.com",
         "hashed_password": "fakehashedpassword",  # In production use proper hashing
         "disabled": False,
+        "role": "admin",
+    },
+    "user1": {
+        "username": "user1",
+        "full_name": "Regular User",
+        "email": "user1@example.com",
+        "hashed_password": "userpassword",  # In production use proper hashing
+        "disabled": False,
+        "role": "user",
     }
 }
 
@@ -119,6 +129,15 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
     """Get current active user"""
     if current_user.disabled:
         raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+async def get_current_admin_user(current_user: User = Depends(get_current_active_user)):
+    """Get current admin user"""
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=403, 
+            detail="Admin access required"
+        )
     return current_user
 
 def check_rate_limit(request: Request):
