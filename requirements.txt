@@ -32,3 +32,6 @@ pyyaml>=6.0
 # Authentication and security
 PyJWT>=2.8.0
 python-multipart>=0.0.6
+
+# Web interface
+jinja2>=3.0.0
