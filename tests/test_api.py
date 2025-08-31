@@ -13,7 +13,7 @@ BASE_URL = os.getenv('TEST_API_URL', 'http://localhost:5000')
 API_URL = os.getenv('RAILWAY_API_URL', 'https://tg-article-bot-api-production-12d6.up.railway.app')
 
 @pytest.fixture
-async def client():
+async def client() -> httpx.AsyncClient:
     """Async client fixture"""
     async with httpx.AsyncClient() as client:
         yield client

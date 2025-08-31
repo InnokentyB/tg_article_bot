@@ -11,8 +11,8 @@ def run_tests():
     print("🧪 Запуск автотестов...")
     
     # Проверяем, что мы в правильной директории
-    if not os.path.exists("tests/test_api.py"):
-        print("❌ Файл tests/test_api.py не найден!")
+    if not os.path.exists("tests/test_current_api.py"):
+        print("❌ Файл tests/test_current_api.py не найден!")
         return False
     
     # Устанавливаем переменные окружения для тестов
@@ -23,7 +23,7 @@ def run_tests():
         # Запускаем тесты
         result = subprocess.run([
             sys.executable, "-m", "pytest", 
-            "tests/test_api.py", 
+            "tests/test_current_api.py", 
             "-v", 
             "--tb=short"
         ], env=env, capture_output=True, text=True)
@@ -56,7 +56,7 @@ def run_specific_test(test_name):
     try:
         result = subprocess.run([
             sys.executable, "-m", "pytest", 
-            f"tests/test_api.py::{test_name}", 
+            f"tests/test_current_api.py::{test_name}", 
             "-v", 
             "--tb=short"
         ], env=env, capture_output=True, text=True)
