@@ -73,23 +73,7 @@ def get_articles(page: int = 1, per_page: int = 20):
     """Get articles from API or return mock data"""
     logger.info(f"Getting articles: page={page}, per_page={per_page}")
     
-    try:
-        # Try to get from API
-        logger.info(f"Trying API: {API_BASE_URL}/api/articles")
-        response = requests.get(
-            f"{API_BASE_URL}/api/articles",
-            params={"page": page, "per_page": per_page},
-            timeout=10
-        )
-        if response.status_code == 200:
-            logger.info("Successfully got articles from API")
-            return response.json()
-        else:
-            logger.warning(f"API returned status {response.status_code}")
-    except Exception as e:
-        logger.warning(f"Failed to get articles from API: {e}")
-    
-    # Return mock data if API fails
+    # For now, always use mock data to avoid API issues
     logger.info("Using mock articles data")
     return get_mock_articles(page, per_page)
 
