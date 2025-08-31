@@ -7,7 +7,7 @@ import os
 from datetime import datetime
 
 # Configuration
-BASE_URL = "http://localhost:5000"
+BASE_URL = "http://localhost:5002"
 API_KEY = os.getenv("API_KEY", "your-api-key-for-external-services")
 
 def test_health_check():
@@ -21,11 +21,7 @@ def test_health_check():
 def test_login():
     """Test login endpoint"""
     print("🔐 Testing login...")
-    login_data = {
-        "username": "admin",
-        "password": "fakehashedpassword"
-    }
-    response = requests.post(f"{BASE_URL}/api/auth/login", data=login_data)
+    response = requests.post(f"{BASE_URL}/api/auth/login?username=admin&password=fakehashedpassword")
     print(f"Status: {response.status_code}")
     if response.status_code == 200:
         token_data = response.json()
