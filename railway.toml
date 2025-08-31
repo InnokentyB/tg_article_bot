@@ -3,7 +3,7 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python api_server.py"
+startCommand = "python api_server_railway_full.py"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
@@ -17,5 +17,7 @@ LOG_LEVEL = "INFO"
 # Эти переменные нужно будет установить в Railway Dashboard
 # DATABASE_URL = "postgresql://..."
 # REDIS_URL = "redis://..."
-# ARTICLE_BOT_TOKEN = "..."
+# ARTICLE_BOT_TOKEN = "8016496837:AAHw5dv5b5X_Ad4GKBqVqzEH8izdS0aUytY"
 # OPENAI_API_KEY = "..."
+# JWT_SECRET_KEY = "..."
+# API_KEY = "..."
