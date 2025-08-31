@@ -18,7 +18,7 @@ COPY templates/ templates/
 
 # Создаем папку static и копируем файлы (если есть)
 RUN mkdir -p static
-COPY static/ static/ || true
+COPY static/ static/
 
 # Устанавливаем Python зависимости
 RUN pip install --no-cache-dir --upgrade pip && \
