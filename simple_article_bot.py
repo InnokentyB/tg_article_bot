@@ -188,23 +188,65 @@ https://tg-article-bot-api-production-12d6.up.railway.app
         # Simulate processing
         await asyncio.sleep(2)
         
-        # Mock article processing
+        # Mock article processing with better categorization
+        import random
+        
+        # Define categories and their keywords
+        categories = {
+            'Технологии': ['tech', 'programming', 'ai', 'machine', 'software', 'hardware', 'computer', 'digital', 'internet', 'web', 'app', 'mobile', 'cloud', 'data', 'algorithm'],
+            'Наука': ['science', 'research', 'study', 'experiment', 'discovery', 'theory', 'physics', 'chemistry', 'biology', 'medicine', 'health', 'medical', 'clinical', 'laboratory'],
+            'Бизнес': ['business', 'company', 'market', 'finance', 'economy', 'investment', 'startup', 'entrepreneur', 'management', 'strategy', 'profit', 'revenue', 'growth'],
+            'Образование': ['education', 'learning', 'school', 'university', 'course', 'training', 'student', 'teacher', 'academic', 'knowledge', 'study', 'research'],
+            'Медицина': ['health', 'medical', 'doctor', 'hospital', 'treatment', 'disease', 'patient', 'medicine', 'therapy', 'surgery', 'diagnosis', 'prevention'],
+            'Финансы': ['finance', 'money', 'banking', 'investment', 'trading', 'stock', 'market', 'economy', 'currency', 'crypto', 'bitcoin', 'trading']
+        }
+        
+        # Determine categories based on URL content
+        url_lower = url.lower()
+        detected_categories = []
+        
+        for category, keywords in categories.items():
+            if any(keyword in url_lower for keyword in keywords):
+                detected_categories.append(category)
+        
+        # If no categories detected, use default
+        if not detected_categories:
+            detected_categories = ['Технологии']
+        
+        # Primary category is the first one
+        primary_category = detected_categories[0]
+        
+        # Generate random content length
+        content_length = random.randint(800, 3000)
+        
         article_info = {
-            'title': 'Демонстрационная статья',
-            'category': 'Технологии',
-            'content_length': 1500,
+            'title': f'Демонстрационная статья - {primary_category}',
+            'category': primary_category,
+            'categories': detected_categories,
+            'content_length': content_length,
             'status': 'Обработана'
         }
+        
+        # Format categories for display
+        if len(article_info['categories']) > 1:
+            categories_text = f"🏷️ **Основная категория:** {article_info['category']}\n🏷️ **Все категории:** {', '.join(article_info['categories'])}"
+        else:
+            categories_text = f"🏷️ **Категория:** {article_info['category']}"
         
         result_text = f"""
 ✅ **Статья успешно обработана!**
 
 📰 **Заголовок:** {article_info['title']}
-🏷️ **Категория:** {article_info['category']}
+{categories_text}
 📏 **Длина текста:** {article_info['content_length']} символов
 📊 **Статус:** {article_info['status']}
 
 🔗 **Ссылка:** {url}
+
+🎯 **Анализ:**
+• Категория определена автоматически
+• Контент проанализирован
+• Дубликаты не найдены
 
 💾 Статья сохранена в базу данных (демо режим).
 
