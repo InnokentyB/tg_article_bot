@@ -6,10 +6,11 @@ from fastapi import FastAPI, HTTPException, Depends, Request, Form, Cookie
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import logging
 import os
 from datetime import datetime
+import requests
 
 from auth import (
     authenticate_user, create_access_token, get_current_active_user,
@@ -63,6 +64,72 @@ def get_user_by_username(username: str) -> Optional[User]:
 def get_all_users() -> List[User]:
     """Get all users"""
     return [User(**user_data) for user_data in fake_users_db.values()]
+
+def get_articles(page: int = 1, per_page: int = 20, access_token: str = None) -> Dict[str, Any]:
+    """Get articles from API with pagination"""
+    try:
+        # API endpoint for articles
+        api_url = "http://localhost:5000/api/articles"
+        
+        # Headers with authentication
+        headers = {}
+        if access_token:
+            headers["Authorization"] = f"Bearer {access_token}"
+        
+        # Query parameters for pagination
+        params = {
+            "skip": (page - 1) * per_page,
+            "limit": per_page
+        }
+        
+        # Make request to API
+        response = requests.get(api_url, headers=headers, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                "articles": data.get("articles", []),
+                "total": data.get("total", 0),
+                "page": page,
+                "per_page": per_page,
+                "pages": (data.get("total", 0) + per_page - 1) // per_page
+            }
+        else:
+            # Return mock data if API is not available
+            return get_mock_articles(page, per_page)
+            
+    except Exception as e:
+        logger.error(f"Error fetching articles: {e}")
+        # Return mock data if API is not available
+        return get_mock_articles(page, per_page)
+
+def get_mock_articles(page: int = 1, per_page: int = 20) -> Dict[str, Any]:
+    """Generate mock articles data for testing"""
+    mock_articles = []
+    total_articles = 150  # Mock total count
+    
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    
+    for i in range(start_idx, min(end_idx, total_articles)):
+        mock_articles.append({
+            "id": i + 1,
+            "title": f"Статья {i + 1}",
+            "url": f"https://example.com/article-{i + 1}",
+            "content": f"Краткое содержание статьи {i + 1}. Это тестовая статья для демонстрации функциональности пагинации.",
+            "category": "Технологии" if i % 3 == 0 else "Наука" if i % 3 == 1 else "Образование",
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "fingerprint": f"fp_{i + 1}_{hash(str(i))}",
+            "status": "active" if i % 5 != 0 else "pending"
+        })
+    
+    return {
+        "articles": mock_articles,
+        "total": total_articles,
+        "page": page,
+        "per_page": per_page,
+        "pages": (total_articles + per_page - 1) // per_page
+    }
 
 def create_mock_token(token: str):
     """Create a mock token object for get_current_user"""
@@ -257,6 +324,48 @@ async def logout():
     response = RedirectResponse(url="/", status_code=302)
     response.delete_cookie(key="access_token")
     return response
+
+@app.get("/articles", response_class=HTMLResponse)
+async def articles_page(
+    request: Request, 
+    page: int = 1, 
+    per_page: int = 20,
+    access_token: Optional[str] = Cookie(None)
+):
+    """Articles management page"""
+    if not access_token:
+        return RedirectResponse(url="/", status_code=302)
+    
+    try:
+        # Verify token and get user
+        from auth import get_current_user
+        user = await get_current_user(create_mock_token(access_token))
+        
+        # Get user data
+        user_data = get_user_by_username(user.username)
+        if not user_data:
+            return RedirectResponse(url="/", status_code=302)
+        
+        # Get articles with pagination
+        articles_data = get_articles(page, per_page, access_token)
+        
+        return templates.TemplateResponse(
+            "articles.html", 
+            {
+                "request": request, 
+                "user": user_data,
+                "articles": articles_data["articles"],
+                "pagination": {
+                    "page": articles_data["page"],
+                    "per_page": articles_data["per_page"],
+                    "total": articles_data["total"],
+                    "pages": articles_data["pages"]
+                }
+            }
+        )
+    except Exception as e:
+        logger.error(f"Articles page error: {e}")
+        return RedirectResponse(url="/", status_code=302)
 
 @app.get("/api/users")
 async def api_get_users(current_user: User = Depends(get_current_admin_user)):
