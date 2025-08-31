@@ -34,7 +34,8 @@ class ArticleStates(StatesGroup):
 
 class ArticleBot:
     def __init__(self):
-        self.token = os.getenv('ARTICLE_BOT_TOKEN')
+        # Use production token
+        self.token = os.getenv('ARTICLE_BOT_TOKEN', '8016496837:AAHw5dv5b5X_Ad4GKBqVqzEH8izdS0aUytY')
         if not self.token:
             raise ValueError("ARTICLE_BOT_TOKEN environment variable is required")
         
