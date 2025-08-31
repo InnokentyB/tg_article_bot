@@ -202,13 +202,19 @@ async def dashboard(
     # Get all users for stats
     all_users = get_all_users()
     
+    # Determine if user is admin
+    is_admin = user and user.get("role") == "admin"
+    
+    # Debug logging
+    logger.info(f"Dashboard - User: {user.get('username') if user else 'None'}, Role: {user.get('role') if user else 'None'}, Is Admin: {is_admin}")
+    
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "user": user,
         "stats": stats,
         "users": all_users,
         "recent_users": recent_users,
-        "is_admin": user and user.get("role") == "admin"
+        "is_admin": is_admin
     })
 
 @app.get("/users", response_class=HTMLResponse)
