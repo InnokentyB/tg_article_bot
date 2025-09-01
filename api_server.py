@@ -6,9 +6,9 @@ import os
 import logging
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 from datetime import datetime
+from contextlib import asynccontextmanager
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -17,54 +17,15 @@ logger = logging.getLogger(__name__)
 # Global variables
 db_manager = None
 
-# Security
-security = HTTPBearer(auto_error=False)
+# Global variables
+db_manager = None
 
-# Create FastAPI app
-app = FastAPI(
-    title="Railway API",
-    description="API for Railway deployment with n8n integration",
-    version="1.0.0"
-)
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # В продакшене лучше ограничить
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-async def verify_api_key(authorization: Optional[HTTPAuthorizationCredentials] = Header(None)):
-    """Verify API key from Authorization header"""
-    api_key = os.getenv('API_KEY')
-    
-    if not api_key:
-        logger.warning("API_KEY not set, skipping authentication")
-        return True
-    
-    if not authorization:
-        raise HTTPException(
-            status_code=401, 
-            detail="Authorization header required",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    if authorization.credentials != api_key:
-        raise HTTPException(
-            status_code=403, 
-            detail="Invalid API key",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    return True
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan events for startup and shutdown"""
     global db_manager
     
+    # Startup
     logger.info("Starting up API server...")
     
     # Log environment variables
@@ -129,17 +90,68 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"⚠️ Database initialization failed: {e}")
         db_manager = None
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    global db_manager
     
+    yield
+    
+    # Shutdown
     logger.info("Shutting down API server...")
-    
     if db_manager:
         await db_manager.close()
         logger.info("Database connection closed")
+
+# Create FastAPI app
+app = FastAPI(
+    title="Railway API",
+    description="API for Railway deployment with n8n integration",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # В продакшене лучше ограничить
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+async def verify_api_key(authorization: Optional[str] = Header(None)):
+    """Verify API key from Authorization header"""
+    api_key = os.getenv('API_KEY')
+    
+    if not api_key:
+        logger.warning("API_KEY not set, skipping authentication")
+        return True
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=401, 
+            detail="Authorization header required",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    # Check if it's a Bearer token
+    if not authorization.startswith('Bearer '):
+        raise HTTPException(
+            status_code=401, 
+            detail="Invalid authorization format. Use 'Bearer <token>'",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    # Extract token
+    token = authorization.replace('Bearer ', '')
+    
+    if token != api_key:
+        raise HTTPException(
+            status_code=403, 
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    return True
+
+
 
 @app.get("/")
 async def read_root():
