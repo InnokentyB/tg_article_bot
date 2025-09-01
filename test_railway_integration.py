@@ -94,22 +94,29 @@ async def test_railway_integration():
                 
                 # Test article retrieval
                 logger.info("📖 Testing article retrieval...")
-                retrieved_article = await client.get_article(created_article['id'])
-                if retrieved_article:
-                    logger.info(f"✅ Article retrieved: {retrieved_article}")
+                article_id = created_article.get('article_id')
+                if article_id:
+                    retrieved_article = await client.get_article(article_id)
+                    if retrieved_article:
+                        logger.info(f"✅ Article retrieved: {retrieved_article}")
+                    else:
+                        logger.warning("⚠️ Article retrieval failed")
                 else:
-                    logger.warning("⚠️ Article retrieval failed")
+                    logger.warning("⚠️ No article ID in response")
                 
                 # Test article update
                 logger.info("✏️ Testing article update...")
                 update_data = {
                     'categories_user': ['test', 'integration', 'success']
                 }
-                updated_article = await client.update_article(created_article['id'], update_data)
-                if updated_article:
-                    logger.info(f"✅ Article updated: {updated_article}")
+                if article_id:
+                    updated_article = await client.update_article(article_id, update_data)
+                    if updated_article:
+                        logger.info(f"✅ Article updated: {updated_article}")
+                    else:
+                        logger.warning("⚠️ Article update failed (not implemented yet)")
                 else:
-                    logger.warning("⚠️ Article update failed")
+                    logger.warning("⚠️ Cannot test update without article ID")
             else:
                 logger.warning("⚠️ Article creation failed")
             
