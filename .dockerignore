@@ -29,8 +29,7 @@ coverage.xml
 logs/
 *.log
 
-# Исключаем файлы, не нужные для веб-админки
-api_server*.py
+# Исключаем файлы, не нужные для API сервера
 telegram_bot*.py
 simple_*.py
 run_bot.py
