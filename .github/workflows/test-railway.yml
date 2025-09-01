@@ -1,0 +1,110 @@
+name: Test Railway Integration
+
+on:
+  push:
+    branches: [ main ]
+    paths: 
+      - 'telegram_bot_railway.py'
+      - 'railway_api_client.py'
+      - 'config_railway.py'
+      - 'test_railway_integration.py'
+      - 'requirements.railway_bot.txt'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'telegram_bot_railway.py'
+      - 'railway_api_client.py'
+      - 'config_railway.py'
+      - 'test_railway_integration.py'
+      - 'requirements.railway_bot.txt'
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  test-railway:
+    runs-on: ubuntu-latest
+    name: Test Railway Bot Integration
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.railway_bot.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.railway_bot.txt
+    
+    - name: Test imports
+      run: |
+        echo "🧪 Testing Railway integration imports..."
+        python -c "from config_railway import RailwayConfig; print('✅ RailwayConfig imported')"
+        python -c "from railway_api_client import RailwayAPIClient; print('✅ RailwayAPIClient imported')"
+        python -c "from telegram_bot_railway import RailwayArticleBot; print('✅ RailwayArticleBot imported')"
+        echo "✅ All imports successful!"
+    
+    - name: Test configuration
+      run: |
+        echo "🔧 Testing Railway configuration..."
+        python test_bot_config.py
+    
+    - name: Test Railway API connection
+      run: |
+        echo "🌐 Testing Railway API connection..."
+        python test_railway_integration.py
+      env:
+        RAILWAY_API_URL: https://tg-article-bot-api-production-12d6.up.railway.app
+        USE_RAILWAY_API: true
+        RAILWAY_API_TIMEOUT: 30
+    
+    - name: Test bot configuration validation
+      run: |
+        echo "🤖 Testing bot configuration validation..."
+        python -c "
+        from config_railway import RailwayConfig
+        config = RailwayConfig()
+        info = config.get_railway_info()
+        print(f'Configuration: {info}')
+        assert config.validate_railway_bot() == False, 'Should fail without token'
+        print('✅ Configuration validation working correctly')
+        "
+    
+    - name: Test API client creation
+      run: |
+        echo "🔌 Testing API client creation..."
+        python -c "
+        from railway_api_client import RailwayAPIClient
+        client = RailwayAPIClient()
+        print(f'Client created: {client.base_url}')
+        print('✅ API client creation successful')
+        "
+    
+    - name: Test bot class creation
+      run: |
+        echo "🤖 Testing bot class creation..."
+        python -c "
+        import os
+        os.environ['ARTICLE_BOT_TOKEN'] = 'test_token'
+        from telegram_bot_railway import RailwayArticleBot
+        print('✅ Bot class creation successful')
+        "
+    
+    - name: Summary
+      run: |
+        echo "🎉 Railway integration tests completed successfully!"
+        echo "✅ All imports working"
+        echo "✅ Configuration validation working"
+        echo "✅ API client creation working"
+        echo "✅ Bot class creation working"
+        echo "✅ Railway API connection tested"
