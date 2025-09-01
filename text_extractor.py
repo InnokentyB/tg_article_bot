@@ -61,9 +61,15 @@ class TextExtractor:
                 title = doc.title()
                 readability_content = doc.summary()
                 
-                # Method 2: Try trafilatura for better quality
-                import trafilatura
-                trafilatura_text = trafilatura.extract(html_content, include_comments=False, include_tables=True)
+                # Method 2: Try trafilatura for better quality (with fallback)
+                trafilatura_text = None
+                try:
+                    import trafilatura
+                    trafilatura_text = trafilatura.extract(html_content, include_comments=False, include_tables=True)
+                except ImportError:
+                    logger.warning("trafilatura not available, using readability only")
+                except Exception as e:
+                    logger.warning(f"trafilatura extraction failed: {e}")
                 
                 # Choose better extraction result
                 if trafilatura_text and len(trafilatura_text) > len(readability_content):
