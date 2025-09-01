@@ -4,8 +4,11 @@ API Server для Railway (простая версия)
 """
 import os
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from typing import Optional
+from datetime import datetime
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -14,12 +17,48 @@ logger = logging.getLogger(__name__)
 # Global variables
 db_manager = None
 
+# Security
+security = HTTPBearer(auto_error=False)
+
 # Create FastAPI app
 app = FastAPI(
     title="Railway API",
-    description="API for Railway deployment",
+    description="API for Railway deployment with n8n integration",
     version="1.0.0"
 )
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # В продакшене лучше ограничить
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+async def verify_api_key(authorization: Optional[HTTPAuthorizationCredentials] = Header(None)):
+    """Verify API key from Authorization header"""
+    api_key = os.getenv('API_KEY')
+    
+    if not api_key:
+        logger.warning("API_KEY not set, skipping authentication")
+        return True
+    
+    if not authorization:
+        raise HTTPException(
+            status_code=401, 
+            detail="Authorization header required",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    if authorization.credentials != api_key:
+        raise HTTPException(
+            status_code=403, 
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    return True
 
 @app.on_event("startup")
 async def startup_event():
@@ -32,6 +71,7 @@ async def startup_event():
     logger.info(f"PORT: {os.getenv('PORT', 'not set')}")
     logger.info(f"DATABASE_URL: {'set' if os.getenv('DATABASE_URL') else 'not set'}")
     logger.info(f"RAILWAY_ENVIRONMENT: {os.getenv('RAILWAY_ENVIRONMENT', 'not set')}")
+    logger.info(f"API_KEY: {'set' if os.getenv('API_KEY') else 'not set'}")
     
     # Try to initialize database
     try:
@@ -100,15 +140,6 @@ async def shutdown_event():
     if db_manager:
         await db_manager.close()
         logger.info("Database connection closed")
-
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 @app.get("/")
 async def read_root():
@@ -273,7 +304,7 @@ async def debug_database():
         }
 
 @app.post("/articles")
-async def create_article(article_data: dict):
+async def create_article(article_data: dict, auth: bool = Depends(verify_api_key)):
     """Create new article with basic categorization"""
     try:
         text = article_data.get('text', '')
@@ -350,6 +381,132 @@ async def create_article(article_data: dict):
     except Exception as e:
         logger.error(f"Error creating article: {e}")
         return {"error": str(e)}
+
+@app.post("/n8n/articles")
+async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api_key)):
+    """Create new article from n8n with enhanced response"""
+    try:
+        text = article_data.get('text', '')
+        title = article_data.get('title', 'Untitled Article')
+        source = article_data.get('source', 'n8n')
+        author = article_data.get('author')
+        summary = article_data.get('summary')
+        language = article_data.get('language', 'en')
+        
+        logger.info(f"Creating article from n8n: {title}")
+        
+        if not text:
+            raise HTTPException(status_code=400, detail="Article text is required")
+        
+        # Basic categorization
+        categories = await basic_categorize(text)
+        
+        # Try to save to database if available
+        global db_manager
+        
+        if db_manager:
+            try:
+                # Save article
+                result = await db_manager.save_article(
+                    title=title,
+                    text=text,
+                    summary=summary,
+                    source=source,
+                    author=author,
+                    language=language,
+                    categories_user=categories,
+                    telegram_user_id=None  # n8n articles don't have telegram user
+                )
+                
+                if result is None:
+                    # Article already exists
+                    article_id = None
+                    fingerprint = "duplicate"
+                    status = "duplicate"
+                    message = "Article already exists (duplicate content)"
+                else:
+                    article_id, fingerprint = result
+                    status = "created"
+                    message = "Article created successfully"
+                
+            except Exception as db_error:
+                logger.error(f"Database error: {db_error}")
+                raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
+        else:
+            raise HTTPException(status_code=503, detail="Database not available")
+        
+        response_data = {
+            "success": True,
+            "article_id": article_id,
+            "fingerprint": fingerprint,
+            "categories": categories,
+            "summary": summary,
+            "status": status,
+            "message": message,
+            "ml_service": "basic",
+            "source": "n8n",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        logger.info(f"Article created from n8n: {response_data}")
+        return response_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating article from n8n: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.get("/n8n/status")
+async def n8n_status(auth: bool = Depends(verify_api_key)):
+    """Get API status for n8n monitoring"""
+    try:
+        global db_manager
+        
+        if db_manager:
+            try:
+                async with db_manager.pool.acquire() as conn:
+                    articles_count = await conn.fetchval("SELECT COUNT(*) FROM articles")
+                    users_count = await conn.fetchval("SELECT COUNT(*) FROM users")
+                    n8n_articles = await conn.fetchval(
+                        "SELECT COUNT(*) FROM articles WHERE source = 'n8n'"
+                    )
+                
+                return {
+                    "status": "healthy",
+                    "database": "connected",
+                    "articles_total": articles_count,
+                    "users_total": users_count,
+                    "n8n_articles": n8n_articles,
+                    "api_version": "1.0.0",
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+            except Exception as db_error:
+                logger.error(f"Database error in n8n status: {db_error}")
+                return {
+                    "status": "degraded",
+                    "database": "error",
+                    "error": str(db_error),
+                    "api_version": "1.0.0",
+                    "timestamp": datetime.now().isoformat()
+                }
+        else:
+            return {
+                "status": "unavailable",
+                "database": "disconnected",
+                "api_version": "1.0.0",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error in n8n status: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "api_version": "1.0.0",
+            "timestamp": datetime.now().isoformat()
+        }
 
 async def basic_categorize(text: str) -> list:
     """Basic categorization without ML service"""
