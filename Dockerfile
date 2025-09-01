@@ -18,9 +18,9 @@ RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Копируем и устанавливаем Python зависимости
-COPY requirements.railway.txt requirements.txt
+COPY requirements.railway.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.railway.txt
 
 # Финальный образ
 FROM python:3.11-alpine AS runtime
