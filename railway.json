@@ -4,8 +4,8 @@
     "builder": "DOCKERFILE"
   },
   "deploy": {
-    "startCommand": "python api_server_railway_full.py",
-    "healthcheckPath": "/api/health",
+    "startCommand": "python api_server.py",
+    "healthcheckPath": "/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE"
   }

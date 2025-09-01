@@ -54,4 +54,4 @@ USER app
 EXPOSE 5000
 
 # Команда по умолчанию
-CMD ["python", "api_server_railway_full.py"]
+CMD ["python", "api_server.py"]
