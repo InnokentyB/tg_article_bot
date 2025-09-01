@@ -42,8 +42,12 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Копируем только необходимые файлы
-COPY --chown=nobody:nobody . .
+# Копируем основные файлы API сервера
+COPY --chown=nobody:nobody api_server.py .
+COPY --chown=nobody:nobody database.py .
+COPY --chown=nobody:nobody text_extractor.py .
+COPY --chown=nobody:nobody requirements.railway.txt .
+COPY --chown=nobody:nobody init.sql .
 
 # Создаем пользователя для безопасности
 RUN adduser -D -s /bin/sh app && \
