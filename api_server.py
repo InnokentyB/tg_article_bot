@@ -396,8 +396,9 @@ async def create_article(article_data: dict, auth: bool = Depends(verify_api_key
 
 @app.post("/n8n/articles")
 async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api_key)):
-    """Create new article from n8n with enhanced response"""
+    """Create new article from n8n with URL or text"""
     try:
+        url = article_data.get('url', '')
         text = article_data.get('text', '')
         title = article_data.get('title', 'Untitled Article')
         source = article_data.get('source', 'n8n')
@@ -407,8 +408,45 @@ async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api
         
         logger.info(f"Creating article from n8n: {title}")
         
-        if not text:
-            raise HTTPException(status_code=400, detail="Article text is required")
+        # Check if we have either URL or text
+        if not url and not text:
+            raise HTTPException(
+                status_code=400, 
+                detail="Either 'url' or 'text' is required. Provide one of them."
+            )
+        
+        # If URL provided, extract text from it
+        if url:
+            try:
+                from text_extractor import TextExtractor
+                text_extractor = TextExtractor()
+                await text_extractor.initialize()
+                
+                extracted_data = await text_extractor.extract_from_url(url)
+                
+                if not extracted_data or not extracted_data.get('text'):
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Failed to extract text from URL. Please provide 'text' instead."
+                    )
+                
+                # Use extracted data if not provided
+                if not text:
+                    text = extracted_data.get('text', '')
+                if not title or title == 'Untitled Article':
+                    title = extracted_data.get('title', 'Untitled Article')
+                if not summary:
+                    summary = extracted_data.get('summary', '')
+                
+                # Close text extractor
+                await text_extractor.close()
+                
+            except Exception as extract_error:
+                logger.error(f"Error extracting text from URL: {extract_error}")
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Failed to extract text from URL: {str(extract_error)}"
+                )
         
         # Basic categorization
         categories = await basic_categorize(text)
@@ -457,6 +495,7 @@ async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api
             "message": message,
             "ml_service": "basic",
             "source": "n8n",
+            "url_processed": bool(url),
             "timestamp": datetime.now().isoformat()
         }
         

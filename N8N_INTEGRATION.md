@@ -20,8 +20,9 @@ Authorization: Bearer YOUR_API_KEY
 **Тело запроса:**
 ```json
 {
-  "title": "Заголовок статьи",
-  "text": "Полный текст статьи...",
+  "url": "https://example.com/article",  // ИЛИ "text" - что-то одно обязательно!
+  "text": "Полный текст статьи...",     // ИЛИ "url" - что-то одно обязательно!
+  "title": "Заголовок статьи (опционально)",
   "summary": "Краткое описание (опционально)",
   "source": "Источник статьи (опционально)",
   "author": "Автор (опционально)",
@@ -80,7 +81,15 @@ Content-Type: application/json
 Authorization: Bearer YOUR_API_KEY
 ```
 
-**Body (JSON):**
+**Body (JSON) - Вариант 1 (только URL):**
+```json
+{
+  "url": "{{ $json.article_url }}",
+  "language": "{{ $json.language || 'ru' }}"
+}
+```
+
+**Body (JSON) - Вариант 2 (только текст):**
 ```json
 {
   "title": "{{ $json.title }}",
@@ -120,7 +129,18 @@ API_KEY=your_secret_api_key_here
 
 ## 📱 Примеры использования
 
-### Простое создание статьи
+### Создание статьи по URL
+```bash
+curl -X POST "https://tg-article-bot-api-production-12d6.up.railway.app/n8n/articles" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "url": "https://example.com/article",
+    "language": "ru"
+  }'
+```
+
+### Создание статьи по тексту
 ```bash
 curl -X POST "https://tg-article-bot-api-production-12d6.up.railway.app/n8n/articles" \
   -H "Content-Type: application/json" \
@@ -128,7 +148,7 @@ curl -X POST "https://tg-article-bot-api-production-12d6.up.railway.app/n8n/arti
   -d '{
     "title": "Тестовая статья",
     "text": "Содержимое тестовой статьи...",
-    "source": "https://example.com"
+    "source": "n8n"
   }'
 ```
 
