@@ -8,5 +8,9 @@
     "healthcheckPath": "/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE"
-  }
+  },
+  "watchPaths": [
+    "api/**/*",
+    "shared/**/*"
+  ]
 }
