@@ -11,6 +11,13 @@
     "restartPolicyType": "ON_FAILURE"
   },
   "watchPaths": [
-    "web-admin/**/*"
+    "web-admin/**/*",
+    "web-admin/web_admin_railway.py",
+    "web-admin/Dockerfile.web-admin",
+    "web-admin/requirements.web-admin.txt",
+    "web-admin/auth.py",
+    "web-admin/templates/**/*",
+    "web-admin/static/**/*",
+    "web-admin/.railway-deploy-trigger"
   ]
 }

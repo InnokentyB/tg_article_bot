@@ -2,6 +2,7 @@
 """
 Веб-админка для Railway
 Version: 2.5 - Use existing API endpoints /articles and /statistics
+Updated: Force Railway deployment with real data integration
 """
 import os
 import logging
