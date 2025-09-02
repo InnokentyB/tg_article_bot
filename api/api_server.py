@@ -36,8 +36,6 @@ async def lifespan(app: FastAPI):
     
     # Try to initialize database
     try:
-        import sys
-        sys.path.append('../shared')
         from database import DatabaseManager
         db_manager = DatabaseManager()
         await db_manager.initialize()
