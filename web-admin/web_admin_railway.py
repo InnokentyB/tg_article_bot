@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Веб-админка для Railway
-Version: 2.2 - Fixed Dockerfile paths for restructured project
+Version: 2.3 - Fixed build context by copying auth.py to web-admin folder
 """
 import os
 import logging
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Article Bot Web Admin",
     description="Веб-админка для управления статьями и пользователями",
-    version="2.2.0"
+    version="2.3.0"
 )
 
 # Mount static files
