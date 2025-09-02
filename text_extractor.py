@@ -16,7 +16,17 @@ class TextExtractor:
     def __init__(self):
         self.session = None
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Cache-Control': 'max-age=0'
         }
     
     async def initialize(self):
@@ -54,13 +64,23 @@ class TextExtractor:
                     return None
                 
                 html_content = await response.text()
-                
+
+                # Check for common blocking patterns
+                if any(blocked in html_content.lower() for blocked in ['captcha', 'blocked', 'access denied', 'forbidden', 'cloudflare']):
+                    logger.warning(f"Site appears to be blocking requests: {url}")
+                    raise RuntimeError("Site appears to be blocking automated requests")
+
+                # Check content length
+                if len(html_content) < 1000:
+                    logger.warning(f"Content too short, possible blocking: {len(html_content)} chars")
+                    raise RuntimeError("Content too short, site may be blocking requests")
+
                 # Enhanced text extraction with multiple methods
                 # Method 1: Use readability for main content
                 doc = Document(html_content)
                 title = doc.title()
                 readability_content = doc.summary()
-                
+
                 # Method 2: Try trafilatura for better quality (with fallback)
                 trafilatura_text = None
                 try:
@@ -70,7 +90,7 @@ class TextExtractor:
                     logger.warning("trafilatura not available, using readability only")
                 except Exception as e:
                     logger.warning(f"trafilatura extraction failed: {e}")
-                
+
                 # Choose better extraction result
                 if trafilatura_text and len(trafilatura_text) > len(readability_content):
                     content = trafilatura_text
@@ -79,6 +99,11 @@ class TextExtractor:
                     # Parse readability content with BeautifulSoup
                     soup = BeautifulSoup(readability_content, 'html.parser')
                     text = soup.get_text(strip=True, separator=' ')
+
+                # Validate extracted text
+                if not text or len(text.strip()) < 100:
+                    logger.warning(f"Extracted text too short: {len(text)} chars")
+                    raise RuntimeError("Failed to extract meaningful text from the page")
                 
                 # Enhanced text cleaning  
                 text = self.clean_text(text)
