@@ -44,8 +44,8 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Templates
 templates = Jinja2Templates(directory="templates")
 
-# API base URL - Railway environment
-API_BASE_URL = os.getenv("API_BASE_URL", "http://api:5000")
+# API base URL - Railway environment or Docker
+API_BASE_URL = os.getenv("API_BASE_URL", "https://tg-article-bot-api-production-12d6.up.railway.app")
 
 # JWT Secret Key
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
@@ -379,7 +379,7 @@ if __name__ == "__main__":
     import uvicorn
     
     # Get port from Railway environment
-    port = int(os.getenv("PORT", 8005))
+    port = int(os.getenv("PORT", 8000))
     
     logger.info(f"Starting Web Admin on port {port}")
     logger.info(f"API Base URL: {API_BASE_URL}")
