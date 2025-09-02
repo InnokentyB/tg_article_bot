@@ -1,0 +1,33 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Установка системных зависимостей
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Копируем requirements для web admin
+COPY requirements.web-admin.txt .
+
+# Устанавливаем Python зависимости
+RUN pip install --no-cache-dir -r requirements.web-admin.txt
+
+# Копируем код web admin
+COPY web_admin_railway.py .
+COPY auth.py .
+COPY templates/ templates/
+COPY static/ static/
+
+# Создаем директории если их нет
+RUN mkdir -p templates static
+
+# Создаем пользователя для безопасности
+RUN useradd --create-home --shell /bin/bash app
+USER app
+
+# Открываем порт
+EXPOSE 8000
+
+# Команда запуска
+CMD ["python", "web_admin_railway.py"]
