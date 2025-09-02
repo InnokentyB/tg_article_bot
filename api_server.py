@@ -424,13 +424,17 @@ async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api
         # If URL provided, extract text from it
         if url:
             try:
+                logger.info(f"Starting URL extraction for: {url}")
                 from text_extractor import TextExtractor
                 text_extractor = TextExtractor()
                 await text_extractor.initialize()
 
                 extracted_data = await text_extractor.extract_from_url(url)
+                logger.info(f"Text extraction result: {extracted_data}")
 
                 if not extracted_data or not extracted_data.get('text'):
+                    logger.error(f"Failed to extract data from URL: {url}")
+                    logger.error(f"Extracted data: {extracted_data}")
                     raise HTTPException(
                         status_code=400,
                         detail="Failed to extract text from URL. Please provide 'text' instead."
@@ -439,16 +443,22 @@ async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api
                 # Use extracted data if not provided
                 if not text:
                     text = extracted_data.get('text', '')
+                    logger.info(f"Using extracted text, length: {len(text)}")
                 if not title or title == 'Untitled Article':
                     title = extracted_data.get('title', 'Untitled Article')
+                    logger.info(f"Using extracted title: {title}")
                 if not summary:
                     summary = extracted_data.get('summary', '')
+                    logger.info(f"Using extracted summary, length: {len(summary) if summary else 0}")
 
                 # Close text extractor
                 await text_extractor.close()
+                logger.info("Text extractor closed successfully")
 
             except Exception as extract_error:
                 logger.error(f"Error extracting text from URL: {extract_error}")
+                logger.error(f"Error type: {type(extract_error).__name__}")
+                logger.error(f"Error details: {str(extract_error)}")
                 raise HTTPException(
                     status_code=400,
                     detail=f"Failed to extract text from URL: {str(extract_error)}. Try one of these solutions: 1) Send text directly with 'text' field, 2) Use 'force_text': true with pre-extracted text, 3) Extract text in n8n first."
