@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Веб-админка для Railway
-Version: 2.5 - Use existing API endpoints /articles and /statistics
-Updated: Force Railway deployment with real data integration
+Version: 2.6 - Fix authentication issues with JWT tokens
+Updated: Resolve function name conflicts and add detailed logging
 """
 import os
 import logging
@@ -22,7 +22,7 @@ load_dotenv()
 from auth import (
     authenticate_user, 
     create_access_token, 
-    get_current_user, 
+    get_current_user as auth_get_current_user, 
     get_current_active_user,
     fake_users_db,
     get_user_by_username,
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Article Bot Web Admin",
     description="Веб-админка для управления статьями и пользователями",
-    version="2.5.0"
+    version="2.6.0"
 )
 
 # Mount static files
@@ -49,24 +49,37 @@ templates = Jinja2Templates(directory="templates")
 # API base URL - Railway environment or Docker
 API_BASE_URL = os.getenv("API_BASE_URL", "https://tg-article-bot-api-production-12d6.up.railway.app")
 
-# JWT Secret Key
+# JWT Secret Key - use the same as in auth.py
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
+logger.info(f"Using JWT Secret Key: {SECRET_KEY[:10]}...")
 
-def get_current_user(token: str) -> Optional[Dict[str, Any]]:
+def get_current_user_from_token(token: str) -> Optional[Dict[str, Any]]:
     """Get current user from token"""
     if not token:
+        logger.warning("No token provided")
         return None
     
     try:
+        logger.info(f"Decoding token: {token[:20]}...")
         # Decode JWT token
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        logger.info(f"Token payload: {payload}")
+        
         username = payload.get("sub")
         if not username:
+            logger.warning("No username in token payload")
             return None
         
         # Get user from database
         user = get_user_by_username(username)
+        logger.info(f"Found user: {user.get('username') if user else 'None'}")
         return user
+    except jwt.ExpiredSignatureError:
+        logger.error("Token has expired")
+        return None
+    except jwt.InvalidTokenError as e:
+        logger.error(f"Invalid token: {e}")
+        return None
     except Exception as e:
         logger.error(f"Error decoding token: {e}")
         return None
@@ -204,7 +217,7 @@ async def dashboard(
         return RedirectResponse(url="/", status_code=302)
     
     try:
-        current_user = get_current_user(access_token)
+        current_user = get_current_user_from_token(access_token)
         if not current_user:
             return RedirectResponse(url="/", status_code=302)
     except Exception as e:
@@ -263,7 +276,7 @@ async def users_page(
         return RedirectResponse(url="/", status_code=302)
     
     try:
-        current_user = get_current_user(access_token)
+        current_user = get_current_user_from_token(access_token)
         if not current_user:
             return RedirectResponse(url="/", status_code=302)
         
@@ -292,7 +305,7 @@ async def articles_page(
         return RedirectResponse(url="/", status_code=302)
     
     try:
-        current_user = get_current_user(access_token)
+        current_user = get_current_user_from_token(access_token)
         if not current_user:
             return RedirectResponse(url="/", status_code=302)
         
@@ -326,7 +339,7 @@ async def add_user(
         return RedirectResponse(url="/", status_code=302)
     
     try:
-        current_user = get_current_user(access_token)
+        current_user = get_current_user_from_token(access_token)
         if not current_user or current_user.get("role") != "admin":
             raise HTTPException(status_code=403, detail="Admin access required")
         
@@ -346,7 +359,7 @@ async def toggle_user(
         return RedirectResponse(url="/", status_code=302)
     
     try:
-        current_user = get_current_user(access_token)
+        current_user = get_current_user_from_token(access_token)
         if not current_user or current_user.get("role") != "admin":
             raise HTTPException(status_code=403, detail="Admin access required")
         
@@ -366,7 +379,7 @@ async def delete_user(
         return RedirectResponse(url="/", status_code=302)
     
     try:
-        current_user = get_current_user(access_token)
+        current_user = get_current_user_from_token(access_token)
         if not current_user or current_user.get("role") != "admin":
             raise HTTPException(status_code=403, detail="Admin access required")
         
@@ -392,7 +405,7 @@ async def api_users(
         raise HTTPException(status_code=401, detail="Not authenticated")
     
     try:
-        current_user = get_current_user(access_token)
+        current_user = get_current_user_from_token(access_token)
         if not current_user or current_user.get("role") != "admin":
             raise HTTPException(status_code=403, detail="Admin access required")
         
