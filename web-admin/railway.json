@@ -9,5 +9,9 @@
     "healthcheckPath": "/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE"
-  }
+  },
+  "watchPaths": [
+    "web-admin/**/*",
+    "shared/auth.py"
+  ]
 }
