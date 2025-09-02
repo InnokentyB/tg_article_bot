@@ -58,12 +58,18 @@ class TextExtractor:
         try:
             if not self.session:
                 raise RuntimeError("HTTP session not initialized")
+            
+            logger.info(f"Starting extraction from URL: {url}")
+            
             async with self.session.get(url) as response:
+                logger.info(f"HTTP response status: {response.status} for URL: {url}")
+                
                 if response.status != 200:
                     logger.error(f"HTTP {response.status} for URL: {url}")
                     return None
                 
                 html_content = await response.text()
+                logger.info(f"Downloaded HTML content length: {len(html_content)} characters")
 
                 # Check for common blocking patterns
                 if any(blocked in html_content.lower() for blocked in ['captcha', 'blocked', 'access denied', 'forbidden', 'cloudflare']):
@@ -77,15 +83,20 @@ class TextExtractor:
 
                 # Enhanced text extraction with multiple methods
                 # Method 1: Use readability for main content
+                logger.info("Using readability for text extraction")
                 doc = Document(html_content)
                 title = doc.title()
                 readability_content = doc.summary()
+                logger.info(f"Readability extracted title: {title[:100] if title else 'None'}")
+                logger.info(f"Readability content length: {len(readability_content) if readability_content else 0}")
 
                 # Method 2: Try trafilatura for better quality (with fallback)
                 trafilatura_text = None
                 try:
                     import trafilatura
+                    logger.info("Trying trafilatura extraction")
                     trafilatura_text = trafilatura.extract(html_content, include_comments=False, include_tables=True)
+                    logger.info(f"Trafilatura extracted text length: {len(trafilatura_text) if trafilatura_text else 0}")
                 except ImportError:
                     logger.warning("trafilatura not available, using readability only")
                 except Exception as e:
@@ -95,10 +106,14 @@ class TextExtractor:
                 if trafilatura_text and len(trafilatura_text) > len(readability_content):
                     content = trafilatura_text
                     text = content
+                    logger.info("Using trafilatura result (better quality)")
                 else:
                     # Parse readability content with BeautifulSoup
+                    logger.info("Using readability result with BeautifulSoup parsing")
                     soup = BeautifulSoup(readability_content, 'html.parser')
                     text = soup.get_text(strip=True, separator=' ')
+
+                logger.info(f"Final extracted text length: {len(text) if text else 0}")
 
                 # Validate extracted text
                 if not text or len(text.strip()) < 100:
@@ -106,7 +121,9 @@ class TextExtractor:
                     raise RuntimeError("Failed to extract meaningful text from the page")
                 
                 # Enhanced text cleaning  
+                logger.info("Cleaning extracted text")
                 text = self.clean_text(text)
+                logger.info(f"Text after cleaning length: {len(text)}")
                 
                 # Extract source from URL
                 parsed_url = urlparse(url)
@@ -116,6 +133,8 @@ class TextExtractor:
                 soup_full = BeautifulSoup(html_content, 'html.parser')
                 author = self.extract_author(soup_full)
                 keywords = self.extract_keywords_from_meta(soup_full)
+                
+                logger.info(f"Extraction successful for {url}: title={title[:50] if title else 'None'}, text_length={len(text)}, author={author}")
                 
                 return {
                     'title': title.strip() if title else None,
@@ -131,6 +150,8 @@ class TextExtractor:
             return None
         except Exception as e:
             logger.error(f"Error extracting from URL {url}: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error details: {str(e)}")
             return None
     
     def extract_author(self, soup: BeautifulSoup) -> Optional[str]:

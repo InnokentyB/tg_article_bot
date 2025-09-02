@@ -84,7 +84,7 @@ services:
     container_name: article-bot-web-admin
     environment:
       - PORT=8000
-      - API_BASE_URL=http://api:5000
+      - API_BASE_URL=${API_BASE_URL:-https://tg-article-bot-api-production-12d6.up.railway.app}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
     ports:
       - "8000:8000"
