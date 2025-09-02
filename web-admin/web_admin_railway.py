@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Веб-админка для Railway
-Version: 2.3 - Fixed build context by copying auth.py to web-admin folder
+Version: 2.4 - Load real articles from API instead of mock data
 """
 import os
 import logging
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Article Bot Web Admin",
     description="Веб-админка для управления статьями и пользователями",
-    version="2.3.0"
+    version="2.4.0"
 )
 
 # Mount static files
@@ -74,7 +74,23 @@ def get_articles(page: int = 1, per_page: int = 20):
     """Get articles from API or return mock data"""
     logger.info(f"Getting articles: page={page}, per_page={per_page}")
     
-    # For now, always use mock data to avoid API issues
+    try:
+        # Try to get real articles from API
+        api_url = f"{API_BASE_URL}/api/articles?page={page}&per_page={per_page}"
+        logger.info(f"Requesting articles from API: {api_url}")
+        
+        response = requests.get(api_url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            logger.info(f"Successfully got {len(data.get('articles', []))} articles from API")
+            return data
+        else:
+            logger.warning(f"API returned status {response.status_code}, falling back to mock data")
+            
+    except Exception as e:
+        logger.error(f"Error fetching articles from API: {e}, falling back to mock data")
+    
+    # Fallback to mock data
     logger.info("Using mock articles data")
     return get_mock_articles(page, per_page)
 
