@@ -37,9 +37,9 @@ async def lifespan(app: FastAPI):
     # Try to initialize database
     try:
         from database import DatabaseManager
-        db_manager = DatabaseManager()
-        await db_manager.initialize()
-        
+    db_manager = DatabaseManager()
+    await db_manager.initialize()
+    
         # Try to create tables if they don't exist
         try:
             async with db_manager.pool.acquire() as conn:
@@ -96,7 +96,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down API server...")
     if db_manager:
-        await db_manager.close()
+    await db_manager.close()
         logger.info("Database connection closed")
 
 # Create FastAPI app
@@ -472,14 +472,14 @@ async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api
 
         if db_manager:
             try:
-                # Save article
+        # Save article
                 result = await db_manager.save_article(
-                    title=title,
-                    text=text,
-                    summary=summary,
-                    source=source,
-                    author=author,
-                    language=language,
+            title=title,
+            text=text,
+            summary=summary,
+            source=source,
+            author=author,
+            language=language,
                     categories_user=categories,
                     telegram_user_id=None  # n8n articles don't have telegram user
                 )
@@ -519,7 +519,7 @@ async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api
 
         logger.info(f"Article created from n8n: {response_data}")
         return response_data
-
+        
     except HTTPException:
         raise
     except Exception as e:

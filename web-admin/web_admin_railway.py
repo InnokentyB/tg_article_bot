@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Веб-админка для Railway
-Version: 2.1 - Added watchPaths configuration for Railway rebuild
+Version: 2.2 - Fixed Dockerfile paths for restructured project
 """
 import os
 import logging
@@ -18,8 +18,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import auth module
-import sys
-sys.path.append('../shared')
 from auth import (
     authenticate_user, 
     create_access_token, 
@@ -38,7 +36,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Article Bot Web Admin",
     description="Веб-админка для управления статьями и пользователями",
-    version="2.1.0"
+    version="2.2.0"
 )
 
 # Mount static files

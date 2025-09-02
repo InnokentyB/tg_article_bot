@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir -r requirements.web-admin.txt
 
 # Копируем код web admin
 COPY web_admin_railway.py .
-COPY auth.py .
+COPY ../shared/auth.py .
 COPY templates/ templates/
 COPY static/ static/
 
