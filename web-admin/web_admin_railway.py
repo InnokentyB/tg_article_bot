@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Веб-админка для Railway
-Version: 2.6 - Fix authentication issues with JWT tokens
-Updated: Resolve function name conflicts and add detailed logging
+Version: 2.7 - Enhanced authentication debugging and cookie handling
+Updated: Add detailed logging, debug endpoint, and improved cookie settings
 """
 import os
 import logging
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Article Bot Web Admin",
     description="Веб-админка для управления статьями и пользователями",
-    version="2.6.0"
+    version="2.7.0"
 )
 
 # Mount static files
@@ -195,16 +195,28 @@ async def login(
     password: str = Form(...)
 ):
     """Handle login"""
+    logger.info(f"Login attempt for username: {username}")
+    
     user = authenticate_user(username, password)
     if not user:
+        logger.warning(f"Failed login attempt for username: {username}")
         return templates.TemplateResponse(
             "login.html", 
             {"request": request, "error": "Неверный логин или пароль"}
         )
     
+    logger.info(f"Successful login for user: {username}")
     access_token = create_access_token(data={"sub": user.username})
+    logger.info(f"Created access token: {access_token[:20]}...")
+    
     response = RedirectResponse(url="/dashboard", status_code=302)
-    response.set_cookie(key="access_token", value=access_token, httponly=True)
+    response.set_cookie(
+        key="access_token", 
+        value=access_token, 
+        httponly=True,
+        max_age=1800,  # 30 minutes
+        samesite="lax"
+    )
     return response
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -301,14 +313,19 @@ async def articles_page(
     access_token: Optional[str] = Cookie(None)
 ):
     """Articles page"""
+    logger.info(f"Articles page requested with token: {access_token[:20] if access_token else 'None'}...")
+    
     if not access_token:
+        logger.warning("No access token found, redirecting to login")
         return RedirectResponse(url="/", status_code=302)
     
     try:
         current_user = get_current_user_from_token(access_token)
         if not current_user:
+            logger.warning("Failed to get current user, redirecting to login")
             return RedirectResponse(url="/", status_code=302)
         
+        logger.info(f"User {current_user.get('username')} accessing articles page")
         articles_data = get_articles(page, per_page)
         
         return templates.TemplateResponse("articles.html", {
@@ -324,7 +341,10 @@ async def articles_page(
         })
     except Exception as e:
         logger.error(f"Error in articles page: {e}")
-        return RedirectResponse(url="/", status_code=302)
+        # Clear the cookie if there's an error
+        response = RedirectResponse(url="/", status_code=302)
+        response.delete_cookie("access_token")
+        return response
 
 @app.post("/users/add")
 async def add_user(
@@ -423,6 +443,26 @@ async def health_check():
         "api_url": API_BASE_URL
     }
 
+@app.get("/debug/token")
+async def debug_token(access_token: Optional[str] = Cookie(None)):
+    """Debug token endpoint"""
+    if not access_token:
+        return {"error": "No token found"}
+    
+    try:
+        payload = jwt.decode(access_token, SECRET_KEY, algorithms=["HS256"])
+        return {
+            "token_valid": True,
+            "payload": payload,
+            "token_preview": access_token[:20] + "..."
+        }
+    except jwt.ExpiredSignatureError:
+        return {"error": "Token expired"}
+    except jwt.InvalidTokenError as e:
+        return {"error": f"Invalid token: {str(e)}"}
+    except Exception as e:
+        return {"error": f"Error: {str(e)}"}
+
 if __name__ == "__main__":
     import uvicorn
     
@@ -438,3 +478,4 @@ if __name__ == "__main__":
         port=port,
         reload=False
     )
+# FORCE DEPLOY v2.7.0 - Tue Sep  2 18:44:33 WEST 2025
