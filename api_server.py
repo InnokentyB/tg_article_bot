@@ -447,7 +447,7 @@ async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api
                 # Close text extractor
                 await text_extractor.close()
 
-                        except Exception as extract_error:
+            except Exception as extract_error:
                 logger.error(f"Error extracting text from URL: {extract_error}")
                 raise HTTPException(
                     status_code=400,
