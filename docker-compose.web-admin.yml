@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  # Web Admin интерфейс
+  web-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile.web-admin
+    container_name: article-bot-web-admin
+    environment:
+      - PORT=8000
+      - API_BASE_URL=http://localhost:5001
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./templates:/app/templates
+      - ./static:/app/static
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
