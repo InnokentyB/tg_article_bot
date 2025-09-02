@@ -22,6 +22,7 @@ Authorization: Bearer YOUR_API_KEY
 {
   "url": "https://example.com/article",  // ИЛИ "text" - что-то одно обязательно!
   "text": "Полный текст статьи...",     // ИЛИ "url" - что-то одно обязательно!
+  "force_text": false,                  // Пропустить обработку URL (опционально)
   "title": "Заголовок статьи (опционально)",
   "summary": "Краткое описание (опционально)",
   "source": "Источник статьи (опционально)",
@@ -42,6 +43,9 @@ Authorization: Bearer YOUR_API_KEY
   "message": "Article created successfully",
   "ml_service": "basic",
   "source": "n8n",
+  "processing_method": "url_extraction",
+  "url_processed": true,
+  "force_text_used": false,
   "timestamp": "2025-01-01T12:00:00"
 }
 ```
@@ -127,6 +131,38 @@ Authorization: Bearer YOUR_API_KEY
 API_KEY=your_secret_api_key_here
 ```
 
+## 🔧 Решение проблем с URL
+
+### 🚨 Если сайт блокирует запросы:
+
+**Решение 1: Использовать force_text**
+```json
+{
+  "text": "Текст статьи, извлеченный в n8n",
+  "title": "Заголовок статьи",
+  "force_text": true
+}
+```
+
+**Решение 2: Извлечение текста в n8n**
+1. Добавьте HTTP Request node для получения HTML
+2. Добавьте HTML Parser node для извлечения текста
+3. Отправьте извлеченный текст в API
+
+**Решение 3: Прямой текст**
+```json
+{
+  "text": "Полный текст статьи",
+  "title": "Заголовок",
+  "source": "https://original-url.com"
+}
+```
+
+### 📊 Информация в ответе API:
+- `processing_method`: "url_extraction" или "direct_text"
+- `url_processed`: true/false
+- `force_text_used`: true/false
+
 ## 📱 Примеры использования
 
 ### Создание статьи по URL
@@ -149,6 +185,18 @@ curl -X POST "https://tg-article-bot-api-production-12d6.up.railway.app/n8n/arti
     "title": "Тестовая статья",
     "text": "Содержимое тестовой статьи...",
     "source": "n8n"
+  }'
+```
+
+### Использование force_text
+```bash
+curl -X POST "https://tg-article-bot-api-production-12d6.up.railway.app/n8n/articles" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -d '{
+    "text": "Текст статьи, извлеченный в n8n",
+    "title": "Заголовок статьи",
+    "force_text": true
   }'
 ```
 

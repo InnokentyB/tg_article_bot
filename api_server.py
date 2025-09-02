@@ -400,36 +400,42 @@ async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api
     try:
         url = article_data.get('url', '')
         text = article_data.get('text', '')
+        force_text = article_data.get('force_text', False)
         title = article_data.get('title', 'Untitled Article')
         source = article_data.get('source', 'n8n')
         author = article_data.get('author')
         summary = article_data.get('summary')
         language = article_data.get('language', 'en')
-        
+
         logger.info(f"Creating article from n8n: {title}")
-        
-        # Check if we have either URL or text
+
+                # Check if we have either URL or text
         if not url and not text:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Either 'url' or 'text' is required. Provide one of them."
             )
-        
+
+        # If force_text is enabled, skip URL processing
+        if force_text:
+            url = None
+            logger.info("Force text mode enabled, skipping URL processing")
+
         # If URL provided, extract text from it
         if url:
             try:
                 from text_extractor import TextExtractor
                 text_extractor = TextExtractor()
                 await text_extractor.initialize()
-                
+
                 extracted_data = await text_extractor.extract_from_url(url)
-                
+
                 if not extracted_data or not extracted_data.get('text'):
                     raise HTTPException(
-                        status_code=400, 
+                        status_code=400,
                         detail="Failed to extract text from URL. Please provide 'text' instead."
                     )
-                
+
                 # Use extracted data if not provided
                 if not text:
                     text = extracted_data.get('text', '')
@@ -437,23 +443,23 @@ async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api
                     title = extracted_data.get('title', 'Untitled Article')
                 if not summary:
                     summary = extracted_data.get('summary', '')
-                
+
                 # Close text extractor
                 await text_extractor.close()
-                
-            except Exception as extract_error:
+
+                        except Exception as extract_error:
                 logger.error(f"Error extracting text from URL: {extract_error}")
                 raise HTTPException(
-                    status_code=400, 
-                    detail=f"Failed to extract text from URL: {str(extract_error)}"
+                    status_code=400,
+                    detail=f"Failed to extract text from URL: {str(extract_error)}. Try one of these solutions: 1) Send text directly with 'text' field, 2) Use 'force_text': true with pre-extracted text, 3) Extract text in n8n first."
                 )
-        
-        # Basic categorization
+
+        # Basic categorization - fast synchronous operation
         categories = await basic_categorize(text)
-        
+
         # Try to save to database if available
         global db_manager
-        
+
         if db_manager:
             try:
                 # Save article
@@ -467,7 +473,7 @@ async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api
                     categories_user=categories,
                     telegram_user_id=None  # n8n articles don't have telegram user
                 )
-                
+
                 if result is None:
                     # Article already exists
                     article_id = None
@@ -478,13 +484,13 @@ async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api
                     article_id, fingerprint = result
                     status = "created"
                     message = "Article created successfully"
-                
+
             except Exception as db_error:
                 logger.error(f"Database error: {db_error}")
                 raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
         else:
             raise HTTPException(status_code=503, detail="Database not available")
-        
+
         response_data = {
             "success": True,
             "article_id": article_id,
@@ -495,17 +501,90 @@ async def create_article_n8n(article_data: dict, auth: bool = Depends(verify_api
             "message": message,
             "ml_service": "basic",
             "source": "n8n",
+            "processing_method": "url_extraction" if url else "direct_text",
             "url_processed": bool(url),
+            "force_text_used": force_text,
             "timestamp": datetime.now().isoformat()
         }
-        
+
         logger.info(f"Article created from n8n: {response_data}")
         return response_data
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating article from n8n: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@app.post("/n8n/articles/fast")
+async def create_article_n8n_fast(article_data: dict, auth: bool = Depends(verify_api_key)):
+    """Fast version - only text processing, skip URL extraction"""
+    try:
+        text = article_data.get('text', '')
+        title = article_data.get('title', 'Untitled Article')
+        source = article_data.get('source', 'n8n')
+        author = article_data.get('author')
+        summary = article_data.get('summary')
+        language = article_data.get('language', 'en')
+
+        logger.info(f"Fast creating article from n8n: {title}")
+
+        if not text:
+            raise HTTPException(
+                status_code=400,
+                detail="Text is required for fast endpoint"
+            )
+
+        # Fast categorization
+        categories = await basic_categorize(text)
+
+        # Save to database
+        global db_manager
+
+        if db_manager:
+            try:
+                result = await db_manager.save_article(
+                    title=title,
+                    text=text,
+                    summary=summary,
+                    source=source,
+                    author=author,
+                    language=language,
+                    categories_user=categories,
+                    telegram_user_id=None
+                )
+
+                if result is None:
+                    article_id = None
+                    fingerprint = "duplicate"
+                    status = "duplicate"
+                    message = "Article already exists (duplicate content)"
+                else:
+                    article_id, fingerprint = result
+                    status = "created"
+                    message = "Article created successfully"
+
+            except Exception as db_error:
+                logger.error(f"Database error: {db_error}")
+                raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
+        else:
+            raise HTTPException(status_code=503, detail="Database not available")
+
+        return {
+            "success": True,
+            "article_id": article_id,
+            "fingerprint": fingerprint,
+            "categories": categories,
+            "status": status,
+            "message": message,
+            "processing_time": "fast",
+            "timestamp": datetime.now().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in fast endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.get("/n8n/status")
