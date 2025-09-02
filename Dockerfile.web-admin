@@ -1,36 +1,33 @@
-# Оптимизированный Dockerfile для веб-админки
-FROM python:3.11-alpine
+FROM python:3.9-slim
 
-# Устанавливаем только необходимые системные зависимости
-RUN apk add --no-cache \
-    gcc \
-    musl-dev \
-    && rm -rf /var/cache/apk/*
-
-# Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Копируем только необходимые файлы для веб-админки
-COPY requirements.web-admin.txt requirements.txt
-COPY auth.py .
-COPY web_admin_railway.py .
-COPY templates/ templates/
+# Установка системных зависимостей
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
 
-# Создаем папку static и копируем файлы (если есть)
-RUN mkdir -p static
-COPY static/ static/
+# Копируем requirements для web admin
+COPY requirements.web-admin.txt .
 
 # Устанавливаем Python зависимости
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.web-admin.txt
+
+# Копируем код web admin
+COPY web_admin_railway.py .
+COPY auth.py .
+COPY templates/ templates/
+COPY static/ static/
+
+# Создаем директории если их нет
+RUN mkdir -p templates static
 
 # Создаем пользователя для безопасности
-RUN adduser -D -s /bin/sh app && \
-    chown -R app:app /app
+RUN useradd --create-home --shell /bin/bash app
 USER app
 
 # Открываем порт
 EXPOSE 8000
 
-# Команда по умолчанию
+# Команда запуска
 CMD ["python", "web_admin_railway.py"]
