@@ -379,7 +379,7 @@ if __name__ == "__main__":
     import uvicorn
     
     # Get port from Railway environment
-    port = int(os.getenv("PORT", 8002))
+    port = int(os.getenv("PORT", 8005))
     
     logger.info(f"Starting Web Admin on port {port}")
     logger.info(f"API Base URL: {API_BASE_URL}")
