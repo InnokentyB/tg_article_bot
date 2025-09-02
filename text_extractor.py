@@ -65,16 +65,54 @@ class TextExtractor:
                 logger.info(f"HTTP response status: {response.status} for URL: {url}")
                 
                 if response.status != 200:
-                    logger.error(f"HTTP {response.status} for URL: {url}")
+                    if response.status == 403:
+                        logger.error(f"HTTP 403 Forbidden - site is blocking requests: {url}")
+                        raise RuntimeError("Site is blocking automated requests (HTTP 403). Try using 'force_text' mode or extract text manually in n8n.")
+                    elif response.status == 429:
+                        logger.error(f"HTTP 429 Too Many Requests - rate limited: {url}")
+                        raise RuntimeError("Site is rate limiting requests (HTTP 429). Try again later or use 'force_text' mode.")
+                    elif response.status == 503:
+                        logger.error(f"HTTP 503 Service Unavailable - site maintenance: {url}")
+                        raise RuntimeError("Site is temporarily unavailable (HTTP 503). Try again later or use 'force_text' mode.")
+                    else:
+                        logger.error(f"HTTP {response.status} for URL: {url}")
+                        raise RuntimeError(f"HTTP error {response.status}: {response.reason}")
                     return None
                 
                 html_content = await response.text()
                 logger.info(f"Downloaded HTML content length: {len(html_content)} characters")
 
-                # Check for common blocking patterns
-                if any(blocked in html_content.lower() for blocked in ['captcha', 'blocked', 'access denied', 'forbidden', 'cloudflare']):
+                # Check for common blocking patterns (but exclude technical mentions)
+                html_lower = html_content.lower()
+                
+                # Check for real blocking indicators (not just technical mentions)
+                real_blocking_indicators = [
+                    'access denied',
+                    'forbidden', 
+                    'blocked by',
+                    'your access has been blocked',
+                    'please complete the captcha',
+                    'verify you are human',
+                    'cloudflare challenge'
+                ]
+                
+                # Check for technical mentions that don't indicate blocking
+                technical_mentions = [
+                    'grecaptcha-badge',
+                    'reCAPTCHA',
+                    'captcha.js',
+                    'captcha.css'
+                ]
+                
+                # Only raise error for real blocking, not technical mentions
+                is_really_blocked = any(indicator in html_lower for indicator in real_blocking_indicators)
+                has_technical_mentions = any(mention in html_lower for mention in technical_mentions)
+                
+                if is_really_blocked and not has_technical_mentions:
                     logger.warning(f"Site appears to be blocking requests: {url}")
                     raise RuntimeError("Site appears to be blocking automated requests")
+                elif has_technical_mentions:
+                    logger.info(f"Site has anti-bot protection but content appears accessible: {url}")
 
                 # Check content length
                 if len(html_content) < 1000:
