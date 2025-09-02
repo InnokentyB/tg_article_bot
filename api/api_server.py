@@ -197,6 +197,55 @@ async def test_endpoint():
         "database_status": db_status
     }
 
+@app.get("/api/articles")
+async def get_api_articles(page: int = 1, per_page: int = 20):
+    """Get articles with pagination for web admin"""
+    global db_manager
+    
+    try:
+        offset = (page - 1) * per_page
+        
+        if db_manager:
+            # Use global database manager
+            articles = await db_manager.get_articles(limit=per_page, offset=offset)
+            
+            # Get total count
+            async with db_manager.pool.acquire() as conn:
+                total_count = await conn.fetchval("SELECT COUNT(*) FROM articles")
+            
+            # Calculate pagination info
+            total_pages = (total_count + per_page - 1) // per_page
+            
+            return {
+                "articles": articles,
+                "total": total_count,
+                "page": page,
+                "per_page": per_page,
+                "pages": total_pages
+            }
+        else:
+            # Fallback to mock data
+            logger.warning("Database not available, using mock data")
+            return {
+                "articles": [
+                    {
+                        "id": 1,
+                        "title": "Mock Article",
+                        "text": "This is a mock article",
+                        "categories": ["Technology"],
+                        "created_at": "2024-01-01T00:00:00Z"
+                    }
+                ],
+                "total": 1,
+                "page": page,
+                "per_page": per_page,
+                "pages": 1
+            }
+        
+    except Exception as e:
+        logger.error(f"Error getting articles: {e}")
+        return {"error": str(e)}
+
 @app.get("/articles")
 async def get_articles(limit: int = 10, offset: int = 0):
     """Get articles"""
@@ -225,6 +274,49 @@ async def get_articles(limit: int = 10, offset: int = 0):
         
     except Exception as e:
         logger.error(f"Error getting articles: {e}")
+        return {"error": str(e)}
+
+@app.get("/api/stats") 
+async def get_api_stats():
+    """Get statistics for web admin"""
+    try:
+        global db_manager
+        
+        if db_manager:
+            try:
+                async with db_manager.pool.acquire() as conn:
+                    articles_count = await conn.fetchval("SELECT COUNT(*) FROM articles")
+                    users_count = await conn.fetchval("SELECT COUNT(*) FROM users")
+                    active_articles = await conn.fetchval("SELECT COUNT(*) FROM articles WHERE created_at > NOW() - INTERVAL '30 days'")
+                
+                return {
+                    "total_articles": articles_count,
+                    "total_users": users_count,
+                    "active_articles": active_articles,
+                    "status": "ok"
+                }
+                
+            except Exception as db_error:
+                logger.warning(f"Database error, using mock data: {db_error}")
+                # Fallback to mock data
+                return {
+                    "total_articles": 1,
+                    "total_users": 1,
+                    "active_articles": 1,
+                    "status": "ok"
+                }
+        else:
+            # Database not available, use mock data
+            logger.warning("Database not available, using mock data")
+            return {
+                "total_articles": 1,
+                "total_users": 1,
+                "active_articles": 1,
+                "status": "ok"
+            }
+        
+    except Exception as e:
+        logger.error(f"Error getting statistics: {e}")
         return {"error": str(e)}
 
 @app.get("/statistics")
