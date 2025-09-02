@@ -9,5 +9,13 @@
     "healthcheckPath": "/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ON_FAILURE"
-  }
+  },
+  "watchPaths": [
+    "web_admin_railway.py",
+    "templates/**/*",
+    "static/**/*",
+    "auth.py",
+    "Dockerfile.web-admin",
+    "requirements.web-admin.txt"
+  ]
 }

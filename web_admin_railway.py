@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Веб-админка для Railway
-Version: 2.0 - Fixed sidebar menu and API documentation links
+Version: 2.1 - Added watchPaths configuration for Railway rebuild
 """
 import os
 import logging
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Article Bot Web Admin",
     description="Веб-админка для управления статьями и пользователями",
-    version="2.0.0"
+    version="2.1.0"
 )
 
 # Mount static files
