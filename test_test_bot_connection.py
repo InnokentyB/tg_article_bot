@@ -13,8 +13,11 @@ async def test_test_bot():
     load_dotenv()
     
     # Получаем токен
-    token = os.getenv('ARTICLE_BOT_TEST_TOKEN', '8270061551:AAFC5sxwxTM4zz8mzy7quKbSvG85lkGbyDs')
-    print(f"Токен: {token[:10]}...{token[-10:]}")
+    token = os.getenv('ARTICLE_BOT_TEST_TOKEN')
+    if not token:
+        print("❌ ARTICLE_BOT_TEST_TOKEN не установлен")
+        return False
+    print("Токен: установлен")
     
     try:
         from aiogram import Bot

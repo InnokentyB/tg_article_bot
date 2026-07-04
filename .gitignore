@@ -83,3 +83,7 @@ htmlcov/
 .env.local
 .env.production
 .env.staging
+
+# Local certificates and private keys
+ssl/*.pem
+*.key

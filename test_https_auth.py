@@ -13,7 +13,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Configuration
 BASE_URL = "https://localhost:5000"
-API_KEY = os.getenv("API_KEY", "your-api-key-for-external-services")
+API_KEY = os.getenv("API_KEY", "")
 
 def test_health_check():
     """Test health check endpoint (no auth required)"""
@@ -32,8 +32,8 @@ def test_login():
     """Test login endpoint"""
     print("🔐 Testing login (HTTPS)...")
     login_data = {
-        "username": "admin",
-        "password": "fakehashedpassword"
+        "username": os.getenv("ADMIN_USERNAME", ""),
+        "password": os.getenv("ADMIN_PASSWORD", "")
     }
     try:
         response = requests.post(f"{BASE_URL}/api/auth/login", data=login_data, verify=False)

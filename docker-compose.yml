@@ -3,7 +3,7 @@
 services:
   # PostgreSQL база данных
   postgres:
-    image: postgres:15-alpine
+    image: pgvector/pgvector:pg15
     container_name: article-bot-db
     environment:
       POSTGRES_DB: article_bot
@@ -43,8 +43,17 @@ services:
     environment:
       - DATABASE_URL=postgresql://article_bot:article_bot_password@postgres:5432/article_bot
       - REDIS_URL=redis://redis:6379/0
-      - ARTICLE_BOT_TOKEN=${ARTICLE_BOT_TOKEN}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ARTICLE_BOT_TOKEN=${ARTICLE_BOT_TOKEN:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - API_KEY=${API_KEY:-}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-fake}
+      - OPENAI_EMBEDDING_MODEL=${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
+      - OPENAI_EMBEDDING_DIMENSIONS=${OPENAI_EMBEDDING_DIMENSIONS:-}
+      - FAKE_EMBEDDING_DIMENSIONS=${FAKE_EMBEDDING_DIMENSIONS:-32}
+      - REVIEW_GENERATOR_PROVIDER=${REVIEW_GENERATOR_PROVIDER:-fake}
+      - OPENAI_REVIEW_MODEL=${OPENAI_REVIEW_MODEL:-gpt-5.5-mini}
+      - OPENAI_REVIEW_TEMPERATURE=${OPENAI_REVIEW_TEMPERATURE:-0.3}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
     ports:
       - "5001:5000"
     depends_on:
@@ -65,8 +74,8 @@ services:
     environment:
       - DATABASE_URL=postgresql://article_bot:article_bot_password@postgres:5432/article_bot
       - REDIS_URL=redis://redis:6379/0
-      - ARTICLE_BOT_TOKEN=${ARTICLE_BOT_TOKEN}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ARTICLE_BOT_TOKEN=${ARTICLE_BOT_TOKEN:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,6 +84,8 @@ services:
     volumes:
       - ./logs:/app/logs
     command: python simple_bot.py
+    profiles:
+      - bot
 
   # Web Admin интерфейс
   web-admin:
@@ -84,8 +95,10 @@ services:
     container_name: article-bot-web-admin
     environment:
       - PORT=8000
-      - API_BASE_URL=${API_BASE_URL:-https://tg-article-bot-api-production-12d6.up.railway.app}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-here}
+      - API_BASE_URL=${API_BASE_URL:-http://api:5000}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
     ports:
       - "8000:8000"
     depends_on:

@@ -34,8 +34,7 @@ class ArticleStates(StatesGroup):
 
 class ArticleBotTest:
     def __init__(self):
-        # Use test token from environment or fallback to the provided test token
-        self.token = os.getenv('ARTICLE_BOT_TEST_TOKEN', '8270061551:AAFC5sxwxTM4zz8mzy7quKbSvG85lkGbyDs')
+        self.token = os.getenv('ARTICLE_BOT_TEST_TOKEN')
         if not self.token:
             raise ValueError("ARTICLE_BOT_TEST_TOKEN environment variable is required")
         

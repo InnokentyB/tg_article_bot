@@ -8,7 +8,7 @@ from datetime import datetime
 
 # Configuration
 BASE_URL = "http://localhost:5002"
-API_KEY = os.getenv("API_KEY", "your-api-key-for-external-services")
+API_KEY = os.getenv("API_KEY", "")
 
 def test_health_check():
     """Test health check endpoint (no auth required)"""
@@ -21,7 +21,9 @@ def test_health_check():
 def test_login():
     """Test login endpoint"""
     print("🔐 Testing login...")
-    response = requests.post(f"{BASE_URL}/api/auth/login?username=admin&password=fakehashedpassword")
+    username = os.getenv("ADMIN_USERNAME", "")
+    password = os.getenv("ADMIN_PASSWORD", "")
+    response = requests.post(f"{BASE_URL}/api/auth/login?username={username}&password={password}")
     print(f"Status: {response.status_code}")
     if response.status_code == 200:
         token_data = response.json()

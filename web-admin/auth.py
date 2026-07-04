@@ -4,6 +4,7 @@ Authentication and authorization system for the API
 import os
 import time
 import jwt
+import hmac
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from fastapi import Depends, HTTPException, status, Request
@@ -14,10 +15,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Configuration
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
-API_KEY = os.getenv("API_KEY", "your-api-key-change-in-production")
+API_KEY = os.getenv("API_KEY")
 
 # Rate limiting
 RATE_LIMIT_WINDOW = 60  # seconds
@@ -41,32 +42,45 @@ class User(BaseModel):
     hashed_password: Optional[str] = None
     role: str = "user"  # "user" or "admin"
 
-# Mock user database (in production use real database)
-fake_users_db = {
-    "admin": {
-        "username": "admin",
-        "full_name": "Administrator",
-        "email": "admin@example.com",
-        "hashed_password": "fakehashedpassword",  # In production use proper hashing
-        "disabled": False,
-        "role": "admin",
-    },
-    "user1": {
-        "username": "user1",
-        "full_name": "Regular User",
-        "email": "user1@example.com",
-        "hashed_password": "userpassword",  # In production use proper hashing
-        "disabled": False,
-        "role": "user",
-    }
-}
+def _load_users_from_env() -> Dict[str, Dict[str, Any]]:
+    """Load web-admin users from environment variables."""
+    users: Dict[str, Dict[str, Any]] = {}
+
+    admin_username = os.getenv("ADMIN_USERNAME")
+    admin_password = os.getenv("ADMIN_PASSWORD")
+    if admin_username and admin_password:
+        users[admin_username] = {
+            "username": admin_username,
+            "full_name": os.getenv("ADMIN_FULL_NAME", "Administrator"),
+            "email": os.getenv("ADMIN_EMAIL", ""),
+            "hashed_password": admin_password,
+            "disabled": False,
+            "role": "admin",
+        }
+
+    user_username = os.getenv("WEB_USER_USERNAME")
+    user_password = os.getenv("WEB_USER_PASSWORD")
+    if user_username and user_password:
+        users[user_username] = {
+            "username": user_username,
+            "full_name": os.getenv("WEB_USER_FULL_NAME", "User"),
+            "email": os.getenv("WEB_USER_EMAIL", ""),
+            "hashed_password": user_password,
+            "disabled": False,
+            "role": "user",
+        }
+
+    return users
+
+
+# In production, replace this with persistent users and hashed passwords.
+fake_users_db = _load_users_from_env()
 
 security = HTTPBearer()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify password (simplified for demo)"""
-    # In production use proper password hashing (bcrypt, etc.)
-    return plain_password == hashed_password
+    """Verify password without leaking timing information."""
+    return hmac.compare_digest(plain_password or "", hashed_password or "")
 
 def get_user(username: str) -> Optional[User]:
     """Get user from database"""
@@ -77,6 +91,9 @@ def get_user(username: str) -> Optional[User]:
 
 def authenticate_user(username: str, password: str) -> Optional[User]:
     """Authenticate user with username and password"""
+    if not fake_users_db:
+        logger.error("No web-admin users configured. Set ADMIN_USERNAME and ADMIN_PASSWORD.")
+        return None
     user = get_user(username)
     if not user:
         return None
@@ -86,6 +103,8 @@ def authenticate_user(username: str, password: str) -> Optional[User]:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     """Create JWT access token"""
+    if not SECRET_KEY:
+        raise RuntimeError("JWT_SECRET_KEY environment variable is required")
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
@@ -97,6 +116,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Verify API key from Bearer token"""
+    if not API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="API authentication is not configured",
+        )
     if credentials.credentials != API_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -107,6 +131,11 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(sec
 
 async def get_current_user(token: str = Depends(security)):
     """Get current user from JWT token"""
+    if not SECRET_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="JWT authentication is not configured",
+        )
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",

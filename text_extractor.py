@@ -108,9 +108,11 @@ class TextExtractor:
                 is_really_blocked = any(indicator in html_lower for indicator in real_blocking_indicators)
                 has_technical_mentions = any(mention in html_lower for mention in technical_mentions)
                 
-                if is_really_blocked and not has_technical_mentions:
+                if is_really_blocked and not has_technical_mentions and len(html_content) < 20000:
                     logger.warning(f"Site appears to be blocking requests: {url}")
                     raise RuntimeError("Site appears to be blocking automated requests")
+                elif is_really_blocked:
+                    logger.info(f"Blocking-like text found inside a large document, continuing extraction: {url}")
                 elif has_technical_mentions:
                     logger.info(f"Site has anti-bot protection but content appears accessible: {url}")
 

@@ -48,8 +48,11 @@ templates = Jinja2Templates(directory="templates")
 # API base URL - Railway environment or Docker
 API_BASE_URL = os.getenv("API_BASE_URL", "https://tg-article-bot-api-production-12d6.up.railway.app")
 
-# JWT Secret Key
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
+def get_jwt_secret() -> str:
+    secret = os.getenv("JWT_SECRET_KEY")
+    if not secret:
+        raise RuntimeError("JWT_SECRET_KEY environment variable is required")
+    return secret
 
 def get_current_user(token: str) -> Optional[Dict[str, Any]]:
     """Get current user from token"""
@@ -58,7 +61,7 @@ def get_current_user(token: str) -> Optional[Dict[str, Any]]:
     
     try:
         # Decode JWT token
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(token, get_jwt_secret(), algorithms=["HS256"])
         username = payload.get("sub")
         if not username:
             return None

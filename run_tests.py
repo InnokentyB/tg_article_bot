@@ -11,20 +11,21 @@ def run_tests():
     print("🧪 Запуск автотестов...")
     
     # Проверяем, что мы в правильной директории
-    if not os.path.exists("tests/test_current_api.py"):
-        print("❌ Файл tests/test_current_api.py не найден!")
+    if not os.path.exists("tests/test_mvp_api.py"):
+        print("❌ Файл tests/test_mvp_api.py не найден!")
         return False
     
     # Устанавливаем переменные окружения для тестов
     env = os.environ.copy()
-    env['RAILWAY_API_URL'] = 'https://tg-article-bot-api-production-12d6.up.railway.app'
+    env.setdefault("API_BASE_URL", "http://localhost:5001")
+    env.setdefault("API_KEY", "local-dev-key")
     
     try:
         # Запускаем тесты
         result = subprocess.run([
-            sys.executable, "-m", "pytest", 
-            "tests/test_current_api.py", 
-            "-v", 
+            sys.executable, "-m", "pytest",
+            "tests/test_mvp_api.py",
+            "-v",
             "--tb=short"
         ], env=env, capture_output=True, text=True)
         
@@ -51,13 +52,14 @@ def run_specific_test(test_name):
     print(f"🧪 Запуск теста: {test_name}")
     
     env = os.environ.copy()
-    env['RAILWAY_API_URL'] = 'https://tg-article-bot-api-production-12d6.up.railway.app'
+    env.setdefault("API_BASE_URL", "http://localhost:5001")
+    env.setdefault("API_KEY", "local-dev-key")
     
     try:
         result = subprocess.run([
-            sys.executable, "-m", "pytest", 
-            f"tests/test_current_api.py::{test_name}", 
-            "-v", 
+            sys.executable, "-m", "pytest",
+            f"tests/test_mvp_api.py::{test_name}",
+            "-v",
             "--tb=short"
         ], env=env, capture_output=True, text=True)
         
