@@ -3,6 +3,7 @@
 Отладка dashboard
 """
 import requests
+import os
 
 def debug_dashboard():
     """Отладка dashboard"""
@@ -15,8 +16,8 @@ def debug_dashboard():
     
     # Логинимся как админ
     login_data = {
-        "username": "admin",
-        "password": "fakehashedpassword"
+        "username": os.getenv("ADMIN_USERNAME", ""),
+        "password": os.getenv("ADMIN_PASSWORD", "")
     }
     
     try:

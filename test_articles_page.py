@@ -3,6 +3,7 @@
 Тест страницы статей
 """
 import requests
+import os
 
 def test_articles_page():
     """Тестируем страницу статей"""
@@ -16,8 +17,8 @@ def test_articles_page():
     # Шаг 1: Логинимся
     print("\n1. Выполняем логин...")
     login_data = {
-        "username": "admin",
-        "password": "fakehashedpassword"
+        "username": os.getenv("ADMIN_USERNAME", ""),
+        "password": os.getenv("ADMIN_PASSWORD", "")
     }
     
     try:

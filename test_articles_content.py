@@ -3,6 +3,7 @@
 Тест содержимого страницы статей
 """
 import requests
+import os
 
 def test_articles_content():
     """Тестируем содержимое страницы статей"""
@@ -15,8 +16,8 @@ def test_articles_content():
     
     # Логинимся
     login_data = {
-        "username": "admin",
-        "password": "fakehashedpassword"
+        "username": os.getenv("ADMIN_USERNAME", ""),
+        "password": os.getenv("ADMIN_PASSWORD", "")
     }
     
     try:

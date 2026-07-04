@@ -8,6 +8,11 @@ import httpx
 import os
 from typing import AsyncGenerator
 
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_LEGACY_API_TESTS") != "1",
+    reason="Legacy external API tests are opt-in. Set RUN_LEGACY_API_TESTS=1 to run.",
+)
+
 # Test configuration
 BASE_URL = os.getenv('TEST_API_URL', 'http://localhost:5000')
 API_URL = os.getenv('RAILWAY_API_URL', 'https://tg-article-bot-api-production-12d6.up.railway.app')

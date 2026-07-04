@@ -121,8 +121,11 @@ async def verify_api_key(authorization: Optional[str] = Header(None)):
     api_key = os.getenv('API_KEY')
     
     if not api_key:
-        logger.warning("API_KEY not set, skipping authentication")
-        return True
+        logger.error("API_KEY is not configured")
+        raise HTTPException(
+            status_code=503,
+            detail="API authentication is not configured"
+        )
     
     if not authorization:
         raise HTTPException(

@@ -3,6 +3,7 @@
 Тест логина в веб-админку
 """
 import requests
+import os
 
 def test_login():
     """Тестируем логин"""
@@ -30,8 +31,8 @@ def test_login():
     # Шаг 2: Выполняем логин
     print("\n2. Выполняем логин...")
     login_data = {
-        "username": "admin",
-        "password": "fakehashedpassword"
+        "username": os.getenv("ADMIN_USERNAME", ""),
+        "password": os.getenv("ADMIN_PASSWORD", "")
     }
     
     try:

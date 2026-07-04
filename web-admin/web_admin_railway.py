@@ -49,9 +49,11 @@ templates = Jinja2Templates(directory="templates")
 # API base URL - Railway environment or Docker
 API_BASE_URL = os.getenv("API_BASE_URL", "https://tg-article-bot-api-production-12d6.up.railway.app")
 
-# JWT Secret Key - use the same as in auth.py
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
-logger.info(f"Using JWT Secret Key: {SECRET_KEY[:10]}...")
+def get_jwt_secret() -> str:
+    secret = os.getenv("JWT_SECRET_KEY")
+    if not secret:
+        raise RuntimeError("JWT_SECRET_KEY environment variable is required")
+    return secret
 
 def get_current_user_from_token(token: str) -> Optional[Dict[str, Any]]:
     """Get current user from token"""
@@ -60,10 +62,9 @@ def get_current_user_from_token(token: str) -> Optional[Dict[str, Any]]:
         return None
     
     try:
-        logger.info(f"Decoding token: {token[:20]}...")
+        logger.info("Decoding access token")
         # Decode JWT token
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        logger.info(f"Token payload: {payload}")
+        payload = jwt.decode(token, get_jwt_secret(), algorithms=["HS256"])
         
         username = payload.get("sub")
         if not username:
@@ -450,7 +451,7 @@ async def debug_token(access_token: Optional[str] = Cookie(None)):
         return {"error": "No token found"}
     
     try:
-        payload = jwt.decode(access_token, SECRET_KEY, algorithms=["HS256"])
+        payload = jwt.decode(access_token, get_jwt_secret(), algorithms=["HS256"])
         return {
             "token_valid": True,
             "payload": payload,

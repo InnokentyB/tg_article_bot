@@ -42,12 +42,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Копируем основные файлы API сервера
-COPY --chown=nobody:nobody api_server.py .
-COPY --chown=nobody:nobody database.py .
-COPY --chown=nobody:nobody text_extractor.py .
-COPY --chown=nobody:nobody requirements.railway.txt .
-COPY --chown=nobody:nobody init.sql .
+# Копируем приложение. .dockerignore оставляет API/MVP-модули и исключает
+# тяжелые legacy/test артефакты.
+COPY --chown=nobody:nobody . .
 
 # Создаем пользователя для безопасности
 RUN adduser -D -s /bin/sh app && \

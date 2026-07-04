@@ -14,7 +14,7 @@ import requests
 
 from auth import (
     authenticate_user, create_access_token, get_current_active_user,
-    get_current_admin_user, User, Token
+    get_current_admin_user, User, Token, fake_users_db
 )
 
 # Setup logging
@@ -33,26 +33,6 @@ templates = Jinja2Templates(directory="templates")
 
 # Static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Mock user database (same as in auth.py)
-fake_users_db = {
-    "admin": {
-        "username": "admin",
-        "full_name": "Administrator",
-        "email": "admin@example.com",
-        "hashed_password": "fakehashedpassword",
-        "disabled": False,
-        "role": "admin",
-    },
-    "user1": {
-        "username": "user1",
-        "full_name": "Regular User",
-        "email": "user1@example.com",
-        "hashed_password": "userpassword",
-        "disabled": False,
-        "role": "user",
-    }
-}
 
 def get_user_by_username(username: str) -> Optional[User]:
     """Get user from database"""

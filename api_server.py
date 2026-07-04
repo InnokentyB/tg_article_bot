@@ -4,18 +4,19 @@ API Server для Railway (простая версия)
 """
 import os
 import logging
+import re
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from datetime import datetime
 from contextlib import asynccontextmanager
+from html import unescape
+from urllib.parse import urlparse
+import math
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Global variables
-db_manager = None
 
 # Global variables
 db_manager = None
@@ -39,52 +40,21 @@ async def lifespan(app: FastAPI):
         from database import DatabaseManager
         db_manager = DatabaseManager()
         await db_manager.initialize()
-        
-        # Try to create tables if they don't exist
+
+        # Apply the canonical schema used by local development and MVP endpoints.
         try:
-            async with db_manager.pool.acquire() as conn:
-                # Create users table
-                await conn.execute("""
-                    CREATE TABLE IF NOT EXISTS users (
-                        id SERIAL PRIMARY KEY,
-                        telegram_user_id BIGINT UNIQUE NOT NULL,
-                        username VARCHAR(100),
-                        first_name VARCHAR(100),
-                        last_name VARCHAR(100),
-                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                    )
-                """)
-                
-                # Create articles table
-                await conn.execute("""
-                    CREATE TABLE IF NOT EXISTS articles (
-                        id SERIAL PRIMARY KEY,
-                        title TEXT NOT NULL,
-                        text TEXT NOT NULL,
-                        summary TEXT,
-                        fingerprint VARCHAR(64) UNIQUE,
-                        source VARCHAR(500),
-                        author VARCHAR(200),
-                        original_link TEXT,
-                        is_translated BOOLEAN DEFAULT FALSE,
-                        categories_user TEXT[],
-                        categories_auto TEXT[],
-                        categories_advanced JSONB,
-                        language VARCHAR(10),
-                        comments_count INTEGER DEFAULT 0,
-                        likes_count INTEGER DEFAULT 0,
-                        views_count INTEGER DEFAULT 0,
-                        telegram_user_id BIGINT REFERENCES users(telegram_user_id) ON DELETE CASCADE,
-                        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-                        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-                    )
-                """)
-                
-                logger.info("✅ Database tables created successfully")
-                
-        except Exception as table_error:
-            logger.warning(f"⚠️ Table creation failed: {table_error}")
+            schema_path = os.getenv("DATABASE_SCHEMA_PATH", "init.sql")
+            if os.path.exists(schema_path):
+                with open(schema_path, "r", encoding="utf-8") as schema_file:
+                    schema_sql = schema_file.read()
+                async with db_manager.pool.acquire() as conn:
+                    await conn.execute(schema_sql)
+                logger.info("✅ Database schema applied successfully")
+            else:
+                logger.warning(f"⚠️ Database schema file not found: {schema_path}")
+        except Exception as schema_error:
+            logger.error(f"❌ Database schema application failed: {schema_error}")
+            raise
         
         logger.info("✅ Database initialized successfully")
     except Exception as e:
@@ -121,8 +91,11 @@ async def verify_api_key(authorization: Optional[str] = Header(None)):
     api_key = os.getenv('API_KEY')
     
     if not api_key:
-        logger.warning("API_KEY not set, skipping authentication")
-        return True
+        logger.error("API_KEY is not configured")
+        raise HTTPException(
+            status_code=503,
+            detail="API authentication is not configured"
+        )
     
     if not authorization:
         raise HTTPException(
@@ -314,6 +287,444 @@ async def debug_database():
             "message": str(e),
             "database_url": "set" if os.getenv("DATABASE_URL") else "not set"
         }
+
+@app.post("/ingest/url")
+async def ingest_url(article_data: dict, auth: bool = Depends(verify_api_key)):
+    """Ingest an article from a URL into the MVP article intelligence store."""
+    return await ingest_url_payload(article_data)
+
+async def ingest_url_payload(article_data: dict) -> dict:
+    """Shared URL ingestion logic for direct URL and RSS ingestion."""
+    global db_manager
+
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    url = (article_data.get("url") or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="url is required")
+
+    language = article_data.get("language")
+    source_name = article_data.get("source_name")
+
+    from text_extractor import TextExtractor
+
+    text_extractor = TextExtractor()
+    await text_extractor.initialize()
+    try:
+        extracted = await text_extractor.extract_from_url(url)
+    finally:
+        await text_extractor.close()
+
+    fallback_text = normalize_feed_text(article_data.get("fallback_text"))
+    if (not extracted or not extracted.get("text")) and not fallback_text:
+        raise HTTPException(status_code=400, detail="Failed to extract article text from URL")
+
+    parsed_url = urlparse(url)
+    extracted = extracted or {}
+    source_url = extracted.get("source") or f"{parsed_url.scheme}://{parsed_url.netloc}"
+    source_name = source_name or parsed_url.netloc or source_url
+    text = extracted.get("text") or fallback_text
+    title = extracted.get("title") or article_data.get("title")
+    summary = normalize_feed_text(article_data.get("summary")) or text_extractor.generate_summary(text)
+    categories = await basic_categorize(text)
+
+    try:
+        source_id = await db_manager.upsert_source(
+            name=source_name,
+            url=source_url,
+            source_type=article_data.get("source_type", "web"),
+            language=language,
+            metadata={"ingested_from": "url"},
+        )
+
+        article_id, fingerprint = await db_manager.save_article(
+            title=title,
+            text=text,
+            summary=summary,
+            source=source_url,
+            author=extracted.get("author"),
+            original_link=url,
+            categories_user=categories,
+            language=language,
+            telegram_user_id=article_data.get("telegram_user_id"),
+        )
+
+        if article_id is None:
+            duplicate = await db_manager.get_article_by_fingerprint(fingerprint)
+            return {
+                "status": "duplicate",
+                "article_id": duplicate.get("id") if duplicate else None,
+                "fingerprint": fingerprint,
+                "source_id": source_id,
+            }
+
+        await db_manager.update_article_intelligence_fields(
+            article_id=article_id,
+            source_id=source_id,
+            canonical_url=url,
+            extracted_at=datetime.now(),
+            metadata={
+                "keywords": extracted.get("keywords") or [],
+                "ingestion_method": article_data.get("ingestion_method", "url"),
+                "extraction_fallback": bool(fallback_text and not extracted.get("text")),
+            },
+        )
+        await db_manager.update_article_categories(article_id, categories)
+
+        from article_chunker import ArticleChunker
+
+        chunks = ArticleChunker().chunk_text(text)
+        inserted_chunks = await db_manager.replace_article_chunks(article_id, chunks)
+
+        return {
+            "status": "created",
+            "article_id": article_id,
+            "source_id": source_id,
+            "fingerprint": fingerprint,
+            "title": title,
+            "text_length": len(text),
+            "chunks_count": len(inserted_chunks),
+            "categories": categories,
+        }
+
+    except RuntimeError:
+        raise
+    except Exception as e:
+        logger.error(f"URL ingestion failed for {url}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def normalize_feed_text(value: Optional[str]) -> Optional[str]:
+    """Convert RSS summary/content HTML into plain text for ingestion fallback."""
+    if not value:
+        return None
+    text = re.sub(r"<[^>]+>", " ", value)
+    text = unescape(text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text or None
+
+@app.post("/ingest/rss")
+async def ingest_rss(feed_data: dict, auth: bool = Depends(verify_api_key)):
+    """Ingest articles from an RSS/Atom feed."""
+    global db_manager
+
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    feed_url = (feed_data.get("feed_url") or "").strip()
+    if not feed_url:
+        raise HTTPException(status_code=400, detail="feed_url is required")
+
+    limit = int(feed_data.get("limit") or 20)
+    limit = max(1, min(limit, 100))
+    language = feed_data.get("language")
+    source_name = feed_data.get("source_name")
+
+    try:
+        import feedparser
+    except ImportError as exc:
+        raise HTTPException(status_code=500, detail="feedparser package is not installed") from exc
+
+    parsed_feed = feedparser.parse(feed_url)
+    if parsed_feed.bozo and not parsed_feed.entries:
+        raise HTTPException(status_code=400, detail=f"Failed to parse feed: {parsed_feed.bozo_exception}")
+
+    resolved_source_name = source_name or parsed_feed.feed.get("title") or feed_url
+    source_id = await db_manager.upsert_source(
+        name=resolved_source_name,
+        url=feed_url,
+        source_type="rss",
+        language=language,
+        metadata={
+            "feed_title": parsed_feed.feed.get("title"),
+            "feed_link": parsed_feed.feed.get("link"),
+        },
+    )
+
+    results = []
+    for entry in parsed_feed.entries[:limit]:
+        entry_url = entry.get("link")
+        if not entry_url:
+            results.append(
+                {
+                    "status": "failed",
+                    "title": entry.get("title"),
+                    "error": "Entry has no link",
+                }
+            )
+            continue
+
+        try:
+            fallback_parts = [
+                entry.get("title"),
+                entry.get("summary"),
+                entry.get("description"),
+            ]
+            for content_item in entry.get("content", []) or []:
+                fallback_parts.append(content_item.get("value"))
+            fallback_text = "\n\n".join(
+                part for part in (normalize_feed_text(part) for part in fallback_parts) if part
+            )
+
+            result = await ingest_url_payload(
+                {
+                    "url": entry_url,
+                    "title": entry.get("title"),
+                    "source_name": resolved_source_name,
+                    "source_type": "rss_entry",
+                    "language": language,
+                    "summary": entry.get("summary"),
+                    "fallback_text": fallback_text,
+                    "ingestion_method": "rss",
+                }
+            )
+            result["feed_entry_title"] = entry.get("title")
+            results.append(result)
+        except HTTPException as exc:
+            results.append(
+                {
+                    "status": "failed",
+                    "url": entry_url,
+                    "title": entry.get("title"),
+                    "error": exc.detail,
+                }
+            )
+        except Exception as exc:
+            logger.error(f"RSS entry ingestion failed for {entry_url}: {exc}")
+            results.append(
+                {
+                    "status": "failed",
+                    "url": entry_url,
+                    "title": entry.get("title"),
+                    "error": str(exc),
+                }
+            )
+
+    summary = {
+        "created": sum(1 for item in results if item.get("status") == "created"),
+        "duplicates": sum(1 for item in results if item.get("status") == "duplicate"),
+        "failed": sum(1 for item in results if item.get("status") == "failed"),
+    }
+
+    return {
+        "status": "completed",
+        "source_id": source_id,
+        "feed_url": feed_url,
+        "source_name": resolved_source_name,
+        "limit": limit,
+        "summary": summary,
+        "results": results,
+    }
+
+@app.post("/embeddings/rebuild")
+async def rebuild_embeddings(request_data: dict, auth: bool = Depends(verify_api_key)):
+    """Rebuild chunk embeddings for an article."""
+    global db_manager
+
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    article_id = request_data.get("article_id")
+    if not article_id:
+        raise HTTPException(status_code=400, detail="article_id is required")
+
+    article = await db_manager.get_article_by_id(int(article_id))
+    if not article:
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    chunks = await db_manager.get_article_chunks(int(article_id))
+    if not chunks:
+        from article_chunker import ArticleChunker
+
+        chunk_payloads = ArticleChunker().chunk_text(article.get("text") or "")
+        if not chunk_payloads:
+            raise HTTPException(status_code=400, detail="Article has no text to embed")
+        chunks = await db_manager.replace_article_chunks(int(article_id), chunk_payloads)
+
+    from embedding_provider import get_embedding_provider
+
+    provider = get_embedding_provider()
+    texts = [chunk["text"] for chunk in chunks]
+    vectors = await provider.embed_texts(texts)
+
+    if len(vectors) != len(chunks):
+        raise HTTPException(status_code=500, detail="Embedding provider returned mismatched vector count")
+
+    embedding_ids = []
+    for chunk, vector in zip(chunks, vectors):
+        embedding_id = await db_manager.upsert_article_embedding(
+            article_id=int(article_id),
+            chunk_id=chunk["id"],
+            model=request_data.get("model") or provider.model,
+            embedding=vector,
+        )
+        embedding_ids.append(embedding_id)
+
+    return {
+        "status": "rebuilt",
+        "article_id": int(article_id),
+        "model": request_data.get("model") or provider.model,
+        "chunks_count": len(chunks),
+        "embeddings_count": len(embedding_ids),
+        "embedding_dimensions": len(vectors[0]) if vectors else 0,
+    }
+
+def cosine_similarity(left: list, right: list) -> float:
+    """Compute cosine similarity for MVP in-memory vector search."""
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(a * a for a in left)) or 1.0
+    right_norm = math.sqrt(sum(b * b for b in right)) or 1.0
+    return dot / (left_norm * right_norm)
+
+async def build_topic_search_results(request_data: dict) -> dict:
+    """Search relevant articles for an editorial topic."""
+    global db_manager
+
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    topic = (request_data.get("topic") or "").strip()
+    if not topic:
+        raise HTTPException(status_code=400, detail="topic is required")
+
+    max_sources = int(request_data.get("max_sources") or 5)
+    language = request_data.get("language")
+    period_days = request_data.get("period_days")
+
+    from embedding_provider import get_embedding_provider
+
+    provider = get_embedding_provider()
+    query_vector = (await provider.embed_texts([topic]))[0]
+    model = request_data.get("model") or provider.model
+
+    rows = await db_manager.get_embedding_rows_for_search(
+        model=model,
+        language=language,
+        period_days=period_days,
+        limit=int(request_data.get("candidate_limit") or 1000),
+    )
+
+    if not rows:
+        articles = await db_manager.get_articles(
+            limit=max_sources,
+            search_text=topic,
+            category=request_data.get("category"),
+        )
+        return {
+            "topic": topic,
+            "mode": "keyword_fallback",
+            "model": model,
+            "results": [
+                {
+                    "article_id": article["id"],
+                    "title": article.get("title"),
+                    "summary": article.get("summary"),
+                    "source": article.get("source"),
+                    "original_link": article.get("original_link"),
+                    "score": None,
+                    "selection_reason": "Matched keyword fallback search because no embeddings were found.",
+                }
+                for article in articles
+            ],
+        }
+
+    by_article = {}
+    for row in rows:
+        score = cosine_similarity(query_vector, row["embedding"])
+        article_id = row["article_id"]
+        existing = by_article.get(article_id)
+        if not existing or score > existing["score"]:
+            by_article[article_id] = {
+                "article_id": article_id,
+                "title": row.get("title"),
+                "summary": row.get("summary"),
+                "source": row.get("source"),
+                "author": row.get("author"),
+                "original_link": row.get("original_link"),
+                "canonical_url": row.get("canonical_url"),
+                "language": row.get("language"),
+                "published_at": row.get("published_at"),
+                "created_at": row.get("created_at"),
+                "best_chunk_id": row.get("chunk_id"),
+                "best_chunk_index": row.get("chunk_index"),
+                "best_chunk_preview": (row.get("chunk_text") or "")[:500],
+                "score": score,
+                "selection_reason": "Selected by embedding similarity to the requested topic.",
+            }
+
+    results = sorted(by_article.values(), key=lambda item: item["score"], reverse=True)[:max_sources]
+    topic_query_id = await db_manager.create_topic_query(
+        topic=topic,
+        language=language,
+        period_days=period_days,
+        max_sources=max_sources,
+        metadata={"model": model, "mode": "embedding_similarity"},
+    )
+
+    return {
+        "topic_query_id": topic_query_id,
+        "topic": topic,
+        "mode": "embedding_similarity",
+        "model": model,
+        "results": results,
+    }
+
+@app.post("/search/topic")
+async def search_topic(request_data: dict, auth: bool = Depends(verify_api_key)):
+    """Search relevant articles for an editorial topic."""
+    return await build_topic_search_results(request_data)
+
+@app.post("/reviews/critical")
+async def create_critical_review(request_data: dict, auth: bool = Depends(verify_api_key)):
+    """Generate and store a critical review draft for a topic."""
+    global db_manager
+
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    search_result = await build_topic_search_results(request_data)
+    selected_articles = search_result.get("results") or []
+    if not selected_articles:
+        raise HTTPException(status_code=404, detail="No relevant articles found for review")
+
+    from critical_review_generator import get_critical_review_generator
+
+    generator = get_critical_review_generator()
+    generated = await generator.generate(search_result["topic"], selected_articles)
+
+    review_id = await db_manager.create_review(
+        topic_query_id=search_result.get("topic_query_id"),
+        title=generated["title"],
+        review_markdown=generated["review_markdown"],
+        telegram_draft=generated["telegram_draft"],
+        selected_sources=[
+            {
+                "article_id": article["article_id"],
+                "rank": index,
+                "selection_reason": article.get("selection_reason"),
+                "relevance_score": article.get("score"),
+                "critique_summary": article.get("best_chunk_preview"),
+            }
+            for index, article in enumerate(selected_articles, start=1)
+        ],
+        metadata={
+            "generator": generator.provider_name,
+            "search_mode": search_result.get("mode"),
+            "search_model": search_result.get("model"),
+        },
+    )
+
+    return {
+        "review_id": review_id,
+        "topic_query_id": search_result.get("topic_query_id"),
+        "topic": search_result["topic"],
+        "generator": generator.provider_name,
+        "selected_articles": selected_articles,
+        "review_markdown": generated["review_markdown"],
+        "telegram_draft": generated["telegram_draft"],
+    }
 
 @app.post("/articles")
 async def create_article(article_data: dict, auth: bool = Depends(verify_api_key)):

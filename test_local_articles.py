@@ -3,6 +3,7 @@
 Тест страницы статей на локальном сервере
 """
 import requests
+import os
 
 def test_local_articles():
     """Тестируем страницу статей локально"""
@@ -16,8 +17,8 @@ def test_local_articles():
     # Шаг 1: Логинимся
     print("\n1. Выполняем логин...")
     login_data = {
-        "username": "admin",
-        "password": "fakehashedpassword"
+        "username": os.getenv("ADMIN_USERNAME", ""),
+        "password": os.getenv("ADMIN_PASSWORD", "")
     }
     
     try:

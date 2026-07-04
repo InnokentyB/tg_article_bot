@@ -7,6 +7,11 @@ import asyncio
 import httpx
 import os
 
+pytestmark = pytest.mark.skipif(
+    os.getenv("RUN_RAILWAY_TESTS") != "1",
+    reason="Railway live API tests are opt-in. Set RUN_RAILWAY_TESTS=1 to run.",
+)
+
 # Test configuration
 API_URL = os.getenv('RAILWAY_API_URL', 'https://tg-article-bot-api-production-12d6.up.railway.app')
 

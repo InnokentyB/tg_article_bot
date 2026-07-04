@@ -3,6 +3,7 @@
 Тест навигации в dashboard
 """
 import requests
+import os
 
 def test_dashboard_navigation():
     """Тестируем навигацию в dashboard"""
@@ -15,8 +16,8 @@ def test_dashboard_navigation():
     
     # Логинимся как админ
     login_data = {
-        "username": "admin",
-        "password": "fakehashedpassword"
+        "username": os.getenv("ADMIN_USERNAME", ""),
+        "password": os.getenv("ADMIN_PASSWORD", "")
     }
     
     try:
@@ -72,8 +73,8 @@ def test_dashboard_navigation():
     
     # Логинимся как user1
     login_data_user = {
-        "username": "user1",
-        "password": "userpassword"
+        "username": os.getenv("WEB_USER_USERNAME", ""),
+        "password": os.getenv("WEB_USER_PASSWORD", "")
     }
     
     try:
