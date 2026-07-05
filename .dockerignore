@@ -30,7 +30,6 @@ logs/
 *.log
 
 # Исключаем файлы, не нужные для API сервера
-telegram_bot*.py
 simple_*.py
 run_bot.py
 test_*.py

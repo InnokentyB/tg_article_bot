@@ -1,268 +1,96 @@
-# Telegram Article Management Bot
+# Telegram Article Management Bot (MVP)
 
-Система управления статьями через Telegram-бот с автоматической категоризацией, обнаружением дубликатов и REST API.
+Система управления статьями через Telegram-бот и веб-панель администрирования с автоматической категоризацией, извлечением текстов, обнаружением дубликатов и встроенным семантическим поиском на базе **pgvector**.
 
-## Возможности
+---
 
-- 📝 Сохранение статей через текст или URL
-- 🔍 Автоматическое извлечение контента из ссылок
-- 🏷️ Автоматическая и пользовательская категоризация
-- 🔄 Обнаружение дубликатов по fingerprint
-- 🌍 Определение языка статей
-- 📊 REST API для управления и статистики
-- 🎯 FSM-управление для интерактивных функций
+## 🚀 Возможности MVP
 
-## Быстрый старт
+- **📝 Сохранение статей**: Отправка текста (от 50 символов) или URL в Telegram-бот.
+- **🔍 Автоматическое извлечение**: Чистый контент из ссылок извлекается с помощью `readability-lxml` и `trafilatura`.
+- **🏷️ Категоризация**: Базовая и расширенная автоматическая разметка категорий.
+- **🔄 Защита от дубликатов**: SHA-256 fingerprint предотвращает повторное сохранение статей.
+- **🧠 Семантический поиск (pgvector)**: Полноценный векторный поиск по темам на стороне базы данных с использованием оператора косинусного сходства (`<=>`).
+- **🤖 Критические обзоры**: Генерация Markdown-обзоров и Telegram-черновиков по выбранной теме на основе ИИ (OpenAI) или локального генератора-заглушки.
+- **📊 REST API & Web-панель**: Управление статьями, источниками и просмотр статистики.
 
-### 🐳 Docker (рекомендуется)
+---
 
-#### Полная система (бот + API + база данных)
+## 🏗️ Каноническая архитектура и точки входа
 
-1. **Настройка переменных окружения:**
-```bash
-cp env.example .env
-# Отредактируйте .env и добавьте ваш Telegram Bot Token
-```
+Все устаревшие и неиспользуемые экспериментальные модули перенесены в директорию `legacy/`.
 
-2. **Запуск всех сервисов:**
-```bash
-./docker-start.sh
-```
+Основными точками входа в систему являются:
+1. **`telegram_bot.py`** — Telegram-бот на фреймворке `aiogram` (v3.x).
+2. **`api_server.py`** — REST API сервер на `FastAPI`.
+3. **`web_admin.py`** — Панель администрирования.
+4. **`database.py`** — Менеджер работы с базой данных PostgreSQL + pgvector.
 
-#### Только инфраструктура (для разработки)
+---
 
-```bash
-./docker-dev.sh
-```
+## 🔧 Локальный запуск (Docker-разработка)
 
-### 🔧 Локальная установка
+Для разработки и тестирования используется локальный стек Docker (Postgres с расширением pgvector, Redis, API-сервер и бот).
 
-#### 1. Настройка окружения
-
+### 1. Настройка окружения
+Создайте файл `.env` на основе `env.example`:
 ```bash
 # Основные переменные
-export DATABASE_URL="postgresql://user:password@host:port/db"
-export ARTICLE_BOT_TOKEN="your_bot_token_here"
+DATABASE_URL="postgresql://article_bot:article_bot_password@postgres:5432/article_bot"
+REDIS_URL="redis://redis:6379/0"
+API_KEY="local-dev-key"
+JWT_SECRET_KEY="local-jwt"
+ADMIN_USERNAME="admin"
+ADMIN_PASSWORD="admin-password"
 
-# Опционально
-export ARTICLE_BOT_WEBHOOK_URL="https://your-domain.com/webhook"
-export OPENAI_API_KEY="your_openai_key"  # для расширенной категоризации
+# Токен бота (от BotFather)
+ARTICLE_BOT_TOKEN="your_telegram_bot_token"
+
+# Настройки ИИ (Опционально)
+OPENAI_API_KEY="your_openai_key"
+EMBEDDING_PROVIDER="fake" # 'fake' для локальных хэш-векторов или 'openai'
+REVIEW_GENERATOR_PROVIDER="fake" # 'fake' или 'openai'
 ```
 
-#### 2. Установка зависимостей
-
+### 2. Запуск сервисов
+Для запуска базы данных, Redis и API-сервера:
 ```bash
-pip install -r requirements.txt
+API_KEY=local-dev-key \
+JWT_SECRET_KEY=local-jwt \
+ADMIN_USERNAME=admin \
+ADMIN_PASSWORD=admin-password \
+docker compose up -d --build postgres redis api
 ```
 
-#### 3. Запуск
-
+Чтобы запустить и Telegram-бота:
 ```bash
-# Только Telegram бот
-python simple_bot.py
-
-# Полная система (бот + API сервер)
-python main_bot.py  # бот
-python api_server.py  # API сервер
+API_KEY=local-dev-key \
+JWT_SECRET_KEY=local-jwt \
+ADMIN_USERNAME=admin \
+ADMIN_PASSWORD=admin-password \
+docker compose --profile bot up -d --build
 ```
 
-## Архитектура
+---
 
-### Компоненты системы
+## 🧪 Тестирование
 
-1. **telegram_bot.py** - Основная логика Telegram бота
-2. **api_server.py** - FastAPI сервер для REST API
-3. **database.py** - Управление PostgreSQL базой данных
-4. **text_extractor.py** - Извлечение текста из URL
-5. **article_categorizer.py** - Система категоризации
-6. **config.py** - Центральная конфигурация
-
-### База данных
-
-```sql
--- Статьи
-articles (
-    id, title, text, summary, fingerprint,
-    source, author, categories_user[], categories_auto[],
-    language, telegram_user_id, created_at, updated_at
-)
-
--- Пользователи
-users (
-    id, telegram_user_id, username, first_name, last_name,
-    created_at, updated_at
-)
-```
-
-## Использование бота
-
-### Команды
-- `/start` - Приветствие и инструкции
-- `/help` - Подробная справка
-- `/stats` - Статистика пользователя
-
-### Отправка статей
-1. Отправьте текст статьи (минимум 50 символов)
-2. Или отправьте ссылку на статью
-3. Бот обработает, проверит дубликаты и предложит добавить категории
-
-### Интерактивное добавление категорий
-1. После сохранения статьи появятся кнопки
-2. Нажмите "➕ Добавить категории"
-3. Введите категории через запятую: `технологии, AI, программирование`
-4. Или нажмите "✅ Готово" для завершения
-
-## REST API
-
-API доступен на порту 5000:
-
-- `GET /` - Веб-интерфейс со списком статей
-- `GET /api/articles` - Список всех статей
-- `GET /api/articles/search?q=query` - Поиск статей
-- `POST /api/articles/{id}/increment/{counter}` - Увеличение счетчиков
-- `GET /api/health` - Статус системы
-
-## Управление конфигурацией
-
-### Мульти-проектная система
-
+Запуск локального набора интеграционных тестов (включая проверку векторного поиска pgvector и RSS-импорта):
 ```bash
-# Проект управления статьями
-export ARTICLE_BOT_TOKEN="bot_token_1"
-
-# Другие проекты
-export RSS_BOT_TOKEN="bot_token_2" 
-export NEWS_BOT_TOKEN="bot_token_3"
+python3 run_tests.py
 ```
 
-### Legacy поддержка
+Тестовый набор находится в [tests/test_mvp_api.py](file:///Users/innokentyb/Documents/Product/TGArticles/tests/test_mvp_api.py).
 
-Система автоматически использует `TELEGRAM_BOT_TOKEN` если `ARTICLE_BOT_TOKEN` не установлен.
+---
 
-### Проверка конфигурации
+## 📂 Структура репозитория
 
-```python
-from config import BotConfig
-
-# Проверка готовности
-if BotConfig.validate_article_bot():
-    print("Бот готов к запуску")
-
-# Статус конфигурации  
-print(BotConfig.get_bot_info())
-```
-
-## 🐳 Docker команды
-
-### Управление сервисами
-
-```bash
-# Запуск всех сервисов
-docker-compose up -d
-
-# Остановка всех сервисов
-docker-compose down
-
-# Просмотр логов
-docker-compose logs -f bot      # Логи бота
-docker-compose logs -f api      # Логи API
-docker-compose logs -f postgres # Логи базы данных
-
-# Перезапуск сервиса
-docker-compose restart bot
-docker-compose restart api
-
-# Обновление образов
-docker-compose pull
-docker-compose up -d --build
-```
-
-### Работа с базой данных
-
-```bash
-# Подключение к PostgreSQL
-docker-compose exec postgres psql -U article_bot -d article_bot
-
-# Резервное копирование
-docker-compose exec postgres pg_dump -U article_bot article_bot > backup.sql
-
-# Восстановление из резервной копии
-docker-compose exec -T postgres psql -U article_bot -d article_bot < backup.sql
-```
-
-### Мониторинг
-
-```bash
-# Статус сервисов
-docker-compose ps
-
-# Использование ресурсов
-docker stats
-
-# Проверка логов
-docker-compose logs --tail=100
-```
-
-## Решение проблем
-
-### Webhook конфликты
-- Система автоматически удаляет webhook при запуске
-- Только один экземпляр бота может использовать токен одновременно
-- Используйте разные токены для разных проектов
-
-### Обработка дубликатов
-- Система создает SHA256 fingerprint для каждой статьи
-- При обнаружении дубликата показывается информация о существующей записи
-- Дубликаты не сохраняются повторно
-
-### Категоризация
-- Автоматическая: на основе ключевых слов (технологии, наука, бизнес и т.д.)
-- Пользовательская: интерактивное добавление через FSM
-- Обе системы работают независимо
-
-### Docker проблемы
-
-#### Контейнеры не запускаются
-```bash
-# Проверьте логи
-docker-compose logs
-
-# Пересоберите образы
-docker-compose build --no-cache
-```
-
-#### Проблемы с базой данных
-```bash
-# Сбросьте данные
-docker-compose down -v
-docker-compose up -d postgres
-```
-
-#### Проблемы с сетью
-```bash
-# Пересоздайте сеть
-docker-compose down
-docker network prune
-docker-compose up -d
-```
-
-## Разработка
-
-### Структура проекта
-- `simple_bot.py` - Минимальная версия для тестирования
-- `main_bot.py` - Полная система с дополнительными функциями  
-- `demo.html` - Веб-интерфейс для демонстрации API
-
-### Отладка
-- Логирование на уровне INFO для основных операций
-- LSP диагностика для проверки кода
-- Автоматические рестарты через Replit workflows
-
-## Лицензия
-
-MIT License - свободное использование и модификация.# Test sync Thu Aug 28 14:37:58 WEST 2025
-# CI/CD Test Thu Aug 28 14:46:18 WEST 2025
-# Auto-sync test Thu Aug 28 14:52:37 WEST 2025
-# Test comment
-# Test commit for CI/CD
-# Another test commit for CI/CD
+- `api_server.py` — FastAPI сервер.
+- `telegram_bot.py` — Telegram-бот.
+- `database.py` — Работа с PostgreSQL (схемы, коннекты, pgvector SQL-запросы).
+- `embedding_provider.py` — Расчет векторов (Fake / OpenAI).
+- `critical_review_generator.py` — Генерация обзоров.
+- `article_chunker.py` — Нарезка текстов на чанки.
+- `init.sql` — Инициализация схемы БД (таблицы, триггеры, включение расширения vector).
+- `legacy/` — Директория с устаревшими модулями и экспериментами.

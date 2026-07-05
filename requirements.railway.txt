@@ -12,3 +12,6 @@ readability-lxml==0.8.1
 trafilatura==2.0.0
 openai>=1.0.0
 feedparser>=6.0.11
+aiogram>=3.0.0
+langdetect>=1.0.9
+numpy>=1.24.0

@@ -14,7 +14,7 @@ COPY requirements.web-admin.txt .
 RUN pip install --no-cache-dir -r requirements.web-admin.txt
 
 # Копируем код web admin
-COPY web_admin_railway.py .
+COPY web_admin.py .
 COPY auth.py .
 COPY templates/ templates/
 COPY static/ static/
@@ -30,4 +30,4 @@ USER app
 EXPOSE 8000
 
 # Команда запуска
-CMD ["python", "web_admin_railway.py"]
+CMD ["python", "web_admin.py"]

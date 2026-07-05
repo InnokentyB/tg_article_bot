@@ -5,9 +5,13 @@ Alternative to BERTopic for semantic topic discovery
 import logging
 import numpy as np
 from typing import Dict, List, Tuple, Optional
-from sklearn.cluster import KMeans, AgglomerativeClustering
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+try:
+    from sklearn.cluster import KMeans, AgglomerativeClustering
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from sklearn.metrics.pairwise import cosine_similarity
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
 # from sentence_transformers import SentenceTransformer  # Not available in this environment
 import re
 
@@ -387,4 +391,4 @@ class TopicClusterer:
     
     def is_available(self) -> bool:
         """Check if topic clustering is available"""
-        return True  # Always available with TF-IDF approach
+        return SKLEARN_AVAILABLE

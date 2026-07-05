@@ -7,15 +7,15 @@
 - [x] Remove default JWT/API secrets.
 - [x] Remove public demo credentials from login UI.
 - [ ] Rotate exposed Telegram bot tokens in BotFather.
-- [ ] Decide whether to purge leaked secrets from git history.
+- [x] Decide whether to purge leaked secrets from git history (Purged!).
 
 ## Phase 1: Product Skeleton
 
 - [x] Write MVP specification.
 - [x] Write implementation task breakdown.
-- [ ] Mark legacy modules and current entrypoints.
-- [ ] Decide canonical app entrypoint for the MVP API.
-- [ ] Add a concise README section for the new product positioning.
+- [x] Mark legacy modules and current entrypoints.
+- [x] Decide canonical app entrypoint for the MVP API.
+- [x] Add a concise README section for the new product positioning.
 
 ## Phase 2: Storage Model
 

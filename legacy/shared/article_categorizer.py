@@ -4,7 +4,6 @@ Article categorization using simple keyword-based approach for MVP
 import logging
 from typing import List, Optional
 from langdetect import detect, DetectorFactory
-from sklearn.feature_extraction.text import TfidfVectorizer
 import re
 
 logger = logging.getLogger(__name__)
@@ -120,34 +119,3 @@ class ArticleCategorizer:
             return [cat for cat, score in sorted_categories[:3]]
         
         return ['other']
-    
-    def extract_keywords(self, text: str, max_keywords: int = 10) -> List[str]:
-        """Extract key terms from text using TF-IDF"""
-        try:
-            # Simple TF-IDF approach
-            vectorizer = TfidfVectorizer(
-                max_features=max_keywords,
-                stop_words='english',  # Basic stop words
-                ngram_range=(1, 2),
-                min_df=1
-            )
-            
-            # Clean text
-            cleaned_text = re.sub(r'[^a-zA-Zа-яА-Я\s]', ' ', text)
-            
-            tfidf_matrix = vectorizer.fit_transform([cleaned_text])
-            feature_names = vectorizer.get_feature_names_out()
-            if hasattr(tfidf_matrix, 'toarray'):
-                scores = tfidf_matrix.toarray()[0]
-            else:
-                scores = tfidf_matrix[0].toarray().flatten()
-            
-            # Get top keywords
-            keyword_scores = list(zip(feature_names, scores))
-            keyword_scores.sort(key=lambda x: x[1], reverse=True)
-            
-            return [keyword for keyword, score in keyword_scores if score > 0]
-            
-        except Exception as e:
-            logger.error(f"Keyword extraction failed: {e}")
-            return []
