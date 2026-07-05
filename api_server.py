@@ -12,7 +12,6 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 from html import unescape
 from urllib.parse import urlparse
-import math
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -560,6 +559,10 @@ async def rebuild_embeddings(request_data: dict, auth: bool = Depends(verify_api
         )
         embedding_ids.append(embedding_id)
 
+    # Idempotently ensure the vector index exists for these dimensions
+    if vectors and len(vectors[0]) > 0:
+        await db_manager.ensure_vector_index(len(vectors[0]))
+
     return {
         "status": "rebuilt",
         "article_id": int(article_id),
@@ -569,17 +572,15 @@ async def rebuild_embeddings(request_data: dict, auth: bool = Depends(verify_api
         "embedding_dimensions": len(vectors[0]) if vectors else 0,
     }
 
-def cosine_similarity(left: list, right: list) -> float:
-    """Compute cosine similarity for MVP in-memory vector search."""
-    if not left or not right or len(left) != len(right):
-        return 0.0
-    dot = sum(a * b for a, b in zip(left, right))
-    left_norm = math.sqrt(sum(a * a for a in left)) or 1.0
-    right_norm = math.sqrt(sum(b * b for b in right)) or 1.0
-    return dot / (left_norm * right_norm)
 
 async def build_topic_search_results(request_data: dict) -> dict:
-    """Search relevant articles for an editorial topic."""
+    """Search relevant articles for an editorial topic.
+
+    Attempts a pgvector SQL cosine-similarity search first (``vector_search``).
+    If pgvector operators are unavailable in the current Postgres instance it
+    transparently falls back to fetching all embeddings and computing cosine
+    similarity in Python.
+    """
     global db_manager
 
     if not db_manager:
@@ -599,14 +600,77 @@ async def build_topic_search_results(request_data: dict) -> dict:
     query_vector = (await provider.embed_texts([topic]))[0]
     model = request_data.get("model") or provider.model
 
-    rows = await db_manager.get_embedding_rows_for_search(
+    # --- Primary path: pgvector SQL search ---
+    try:
+        rows = await db_manager.vector_search(
+            query_vector=query_vector,
+            model=model,
+            max_results=max_sources,
+            language=language,
+            period_days=period_days,
+        )
+        if rows:
+            results = [
+                {
+                    "article_id": row["article_id"],
+                    "title": row.get("title"),
+                    "summary": row.get("summary"),
+                    "source": row.get("source"),
+                    "author": row.get("author"),
+                    "original_link": row.get("original_link"),
+                    "canonical_url": row.get("canonical_url"),
+                    "language": row.get("language"),
+                    "published_at": row.get("published_at"),
+                    "created_at": row.get("created_at"),
+                    "best_chunk_id": row.get("chunk_id"),
+                    "best_chunk_index": row.get("chunk_index"),
+                    "best_chunk_preview": (row.get("chunk_text") or "")[:500],
+                    "score": row["score"],
+                    "selection_reason": "Selected by pgvector cosine similarity to the requested topic.",
+                }
+                for row in rows
+            ]
+            topic_query_id = await db_manager.create_topic_query(
+                topic=topic,
+                language=language,
+                period_days=period_days,
+                max_sources=max_sources,
+                metadata={"model": model, "mode": "embedding_similarity"},
+            )
+            return {
+                "topic_query_id": topic_query_id,
+                "topic": topic,
+                "mode": "embedding_similarity",
+                "model": model,
+                "results": results,
+            }
+    except Exception as pgvector_err:
+        logger.warning(
+            "pgvector search failed (%s: %s), falling back to Python-side similarity.",
+            type(pgvector_err).__name__,
+            pgvector_err,
+        )
+
+    # --- Fallback path: Python cosine similarity ---
+    import math
+
+    def _cosine(left: list, right: list) -> float:
+        """Local fallback cosine similarity (Python-side, no pgvector)."""
+        if not left or not right or len(left) != len(right):
+            return 0.0
+        dot = sum(a * b for a, b in zip(left, right))
+        ln = math.sqrt(sum(a * a for a in left)) or 1.0
+        rn = math.sqrt(sum(b * b for b in right)) or 1.0
+        return dot / (ln * rn)
+
+    legacy_rows = await db_manager.get_embedding_rows_for_search(
         model=model,
         language=language,
         period_days=period_days,
         limit=int(request_data.get("candidate_limit") or 1000),
     )
 
-    if not rows:
+    if not legacy_rows:
         articles = await db_manager.get_articles(
             limit=max_sources,
             search_text=topic,
@@ -630,9 +694,9 @@ async def build_topic_search_results(request_data: dict) -> dict:
             ],
         }
 
-    by_article = {}
-    for row in rows:
-        score = cosine_similarity(query_vector, row["embedding"])
+    by_article: dict = {}
+    for row in legacy_rows:
+        score = _cosine(query_vector, row["embedding"])
         article_id = row["article_id"]
         existing = by_article.get(article_id)
         if not existing or score > existing["score"]:
@@ -670,6 +734,7 @@ async def build_topic_search_results(request_data: dict) -> dict:
         "model": model,
         "results": results,
     }
+
 
 @app.post("/search/topic")
 async def search_topic(request_data: dict, auth: bool = Depends(verify_api_key)):

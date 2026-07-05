@@ -45,7 +45,7 @@
 
 ## Phase 5: Retrieval
 
-- [ ] Add vector search SQL.
+- [x] Add vector search SQL.
 - [x] Add keyword fallback search.
 - [x] Add topic search endpoint `POST /search/topic`.
 - [x] Add filters for language, period, source, and max sources.

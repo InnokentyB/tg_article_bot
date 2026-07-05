@@ -123,3 +123,67 @@ def test_rss_ingestion_stores_feed_entry(
     assert data["results"]
     assert data["summary"]["created"] + data["summary"]["duplicates"] >= 1
     assert data["summary"]["failed"] == 0
+
+
+def test_vector_search_uses_db(
+    client: httpx.Client,
+    auth_headers: dict[str, str],
+) -> None:
+    """Verify that the search path returns a numeric similarity score.
+
+    A float score indicates that the pgvector (or Python-fallback) similarity
+    path was used.  A ``None`` score would mean keyword_fallback — which only
+    fires when there are zero stored embeddings.
+    """
+    import time
+
+    stamp = int(time.time())
+    article_text = (
+        "Vector databases store high-dimensional embeddings for efficient "
+        "approximate nearest-neighbour retrieval using cosine distance. "
+        f"pgvector test stamp: {stamp}."
+    )
+
+    # 1. Create article
+    create_resp = client.post(
+        "/articles",
+        json={
+            "title": f"pgvector test article {stamp}",
+            "text": article_text,
+            "source": "pytest-vector",
+        },
+        headers=auth_headers,
+    )
+    assert create_resp.status_code == 200
+    article_id = create_resp.json()["article_id"]
+
+    # 2. Build embeddings
+    embed_resp = client.post(
+        "/embeddings/rebuild",
+        json={"article_id": article_id},
+        headers=auth_headers,
+    )
+    assert embed_resp.status_code == 200
+    assert embed_resp.json()["embeddings_count"] >= 1
+
+    # 3. Search and verify numeric score (pgvector or Python fallback)
+    search_resp = client.post(
+        "/search/topic",
+        json={
+            "topic": "vector databases cosine distance embeddings",
+            "max_sources": 5,
+        },
+        headers=auth_headers,
+    )
+    assert search_resp.status_code == 200
+    search = search_resp.json()
+
+    assert search["mode"] in {"embedding_similarity", "keyword_fallback"}
+
+    # When embeddings exist the score must be a number, not None.
+    results_with_score = [r for r in search["results"] if r.get("score") is not None]
+    assert results_with_score, "Expected at least one result with a numeric similarity score"
+
+    # Our article must appear somewhere in the results.
+    assert any(r["article_id"] == article_id for r in search["results"])
+

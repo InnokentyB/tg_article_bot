@@ -3,10 +3,8 @@
 -- Включаем расширения
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";
-
--- pgvector should be enabled in production once the Postgres image supports it.
--- MVP stores embeddings as DOUBLE PRECISION[] to keep local development working
--- with the current vanilla postgres image.
+-- pgvector: native vector type + similarity search operators (<=> cosine distance).
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Источники контента: RSS, сайты, блоги, Telegram-каналы, API
 CREATE TABLE IF NOT EXISTS sources (
@@ -77,18 +75,36 @@ CREATE TABLE IF NOT EXISTS article_chunks (
     UNIQUE(article_id, chunk_index)
 );
 
--- Embeddings чанков. DOUBLE PRECISION[] используется как MVP-compatible
--- формат до перехода на pgvector.
+-- Embeddings чанков. Используем тип vector из pgvector для поддержки
+-- SQL-операторов сходства (<=> — косинусное расстояние).
+-- Размерность не фиксируется в DDL; тип `vector` принимает векторы любой длины.
 CREATE TABLE IF NOT EXISTS article_embeddings (
     id SERIAL PRIMARY KEY,
     article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
     chunk_id INTEGER NOT NULL REFERENCES article_chunks(id) ON DELETE CASCADE,
     model TEXT NOT NULL,
-    embedding DOUBLE PRECISION[] NOT NULL,
+    embedding vector NOT NULL,
     embedding_dimensions INTEGER NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE(chunk_id, model)
 );
+
+-- Мигрируем существующую колонку DOUBLE PRECISION[] → vector для уже созданных БД.
+-- Идемпотентно: если колонка уже имеет тип vector, команда не изменяет ничего.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'article_embeddings'
+          AND column_name = 'embedding'
+          AND data_type = 'ARRAY'
+    ) THEN
+        ALTER TABLE article_embeddings
+            ALTER COLUMN embedding TYPE vector
+            USING embedding::vector;
+    END IF;
+END
+$$;
 
 -- Редакторские запросы по темам
 CREATE TABLE IF NOT EXISTS topic_queries (
@@ -140,6 +156,10 @@ CREATE INDEX IF NOT EXISTS idx_sources_source_type ON sources(source_type);
 CREATE INDEX IF NOT EXISTS idx_article_chunks_article_id ON article_chunks(article_id);
 CREATE INDEX IF NOT EXISTS idx_article_embeddings_article_id ON article_embeddings(article_id);
 CREATE INDEX IF NOT EXISTS idx_article_embeddings_chunk_model ON article_embeddings(chunk_id, model);
+-- NOTE: An IVFFLAT approximate-nearest-neighbour index requires a fixed-dimension
+-- vector(N) type and can only be created after data is loaded (needs at least
+-- the same number of rows as lists). It is created dynamically by the application
+-- once the embedding dimension is known. See database.py ensure_vector_index().
 CREATE INDEX IF NOT EXISTS idx_topic_queries_created_at ON topic_queries(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status);
 CREATE INDEX IF NOT EXISTS idx_review_sources_review_id ON review_sources(review_id);

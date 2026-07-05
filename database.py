@@ -24,7 +24,43 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to create database pool: {e}")
             raise
-    
+
+    async def ensure_vector_index(self, dimensions: int) -> None:
+        """Create an IVFFLAT cosine-distance index on article_embeddings.embedding.
+
+        pgvector requires the column to be cast to ``vector(N)`` with a fixed
+        dimension before an approximate-nearest-neighbour index can be built.
+        This method is idempotent — it skips creation if the index already exists.
+
+        Args:
+            dimensions: Embedding dimension (e.g. 32 for fake, 1536 for OpenAI).
+        """
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        index_name = f"idx_article_embeddings_ivfflat_{dimensions}"
+        async with self.pool.acquire() as conn:
+            exists = await conn.fetchval(
+                "SELECT 1 FROM pg_indexes WHERE indexname = $1",
+                index_name,
+            )
+            if exists:
+                return
+            try:
+                await conn.execute(
+                    f"""
+                    CREATE INDEX {index_name}
+                        ON article_embeddings
+                        USING ivfflat ((embedding::vector({dimensions})) vector_cosine_ops)
+                        WITH (lists = 100)
+                    """
+                )
+                logger.info(
+                    "Created IVFFLAT vector index %s (dimensions=%d)", index_name, dimensions
+                )
+            except Exception as exc:
+                # Non-fatal: sequential scan will be used instead.
+                logger.warning("Could not create IVFFLAT index: %s", exc)
+
     async def close(self):
         """Close database connection pool"""
         if self.pool:
@@ -336,11 +372,15 @@ class DatabaseManager:
             raise ValueError("Embedding must not be empty")
         if not self.pool:
             raise RuntimeError("Database pool not initialized")
+        
+        # Convert List[float] to pgvector-compatible string (e.g. "[0.1, 0.2, 0.3]")
+        embedding_str = f"[{','.join(map(str, embedding))}]"
+        
         async with self.pool.acquire() as conn:
             return await conn.fetchval(
                 """INSERT INTO article_embeddings
                    (article_id, chunk_id, model, embedding, embedding_dimensions)
-                   VALUES ($1, $2, $3, $4, $5)
+                   VALUES ($1, $2, $3, $4::vector, $5)
                    ON CONFLICT (chunk_id, model) DO UPDATE SET
                        embedding = EXCLUDED.embedding,
                        embedding_dimensions = EXCLUDED.embedding_dimensions,
@@ -349,9 +389,98 @@ class DatabaseManager:
                 article_id,
                 chunk_id,
                 model,
-                embedding,
+                embedding_str,
                 len(embedding),
             )
+
+    async def vector_search(
+        self,
+        query_vector: List[float],
+        model: str,
+        max_results: int = 20,
+        language: Optional[str] = None,
+        period_days: Optional[int] = None,
+    ) -> List[Dict]:
+        """Search article chunks by cosine similarity using pgvector SQL operators.
+
+        Uses the ``<=>`` operator (cosine distance) so ranking is done entirely
+        inside Postgres — no Python-side matrix math required.  Returns the
+        best-scoring chunk per article, sorted by similarity descending.
+
+        Args:
+            query_vector: Embedding of the search query (must match stored dimension).
+            model:        Embedding model name to filter by.
+            max_results:  Maximum number of *articles* to return.
+            language:     Optional ISO-639-1 language filter.
+            period_days:  Optional recency filter (days since published/created).
+
+        Returns:
+            List of dicts with keys: article_id, title, summary, source, author,
+            original_link, canonical_url, language, published_at, created_at,
+            chunk_id, chunk_index, chunk_text, score.
+        """
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+
+        # Convert List[float] query_vector to pgvector string format (e.g. "[0.1, 0.2, 0.3]")
+        query_vector_str = f"[{','.join(map(str, query_vector))}]"
+
+        query = """
+            SELECT DISTINCT ON (a.id)
+                a.id          AS article_id,
+                a.title,
+                a.summary,
+                a.source,
+                a.author,
+                a.original_link,
+                a.canonical_url,
+                a.language,
+                a.published_at,
+                a.created_at,
+                c.id          AS chunk_id,
+                c.chunk_index,
+                c.text        AS chunk_text,
+                1 - (e.embedding <=> $1::vector) AS score
+            FROM article_embeddings e
+            JOIN article_chunks c ON c.id = e.chunk_id
+            JOIN articles     a ON a.id = e.article_id
+            WHERE e.model = $2
+        """
+        params: List[Any] = [query_vector_str, model]
+        param_count = 3
+
+        if language:
+            query += f" AND a.language = ${param_count}"
+            params.append(language)
+            param_count += 1
+
+        if period_days:
+            query += (
+                f" AND COALESCE(a.published_at, a.created_at)"
+                f" >= NOW() - (${param_count} * INTERVAL '1 day')"
+            )
+            params.append(period_days)
+            param_count += 1
+
+        # ORDER BY must include the DISTINCT ON column first, then the sort key.
+        query += f"""
+            ORDER BY a.id,
+                     e.embedding <=> $1::vector
+            LIMIT ${param_count}
+        """
+        params.append(max_results)
+
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+            results = [dict(row) for row in rows]
+            # Re-sort by score DESC after DISTINCT ON (Postgres returns them by a.id).
+            results.sort(key=lambda r: r["score"] or 0.0, reverse=True)
+            logger.info(
+                "pgvector search returned %d results for model=%s",
+                len(results),
+                model,
+            )
+            return results
 
     async def get_embedding_rows_for_search(
         self,
@@ -360,7 +489,14 @@ class DatabaseManager:
         period_days: Optional[int] = None,
         limit: int = 1000,
     ) -> List[Dict]:
-        """Load chunk embeddings for MVP Python-side similarity search."""
+        """Load chunk embeddings for Python-side similarity search.
+
+        .. deprecated::
+            Use :meth:`vector_search` instead.  This method fetches raw
+            embedding arrays into Python memory and computes cosine similarity
+            there, which does not scale.  It is retained as a fallback for
+            environments where pgvector is unavailable.
+        """
         query = """
             SELECT
                 a.id AS article_id,
@@ -376,7 +512,7 @@ class DatabaseManager:
                 c.id AS chunk_id,
                 c.chunk_index,
                 c.text AS chunk_text,
-                e.embedding,
+                e.embedding::double precision[] AS embedding,
                 e.model
             FROM article_embeddings e
             JOIN article_chunks c ON c.id = e.chunk_id
