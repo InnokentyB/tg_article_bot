@@ -84,7 +84,7 @@ services:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
-    command: python simple_bot.py
+    command: python telegram_bot.py
     profiles:
       - bot
 
