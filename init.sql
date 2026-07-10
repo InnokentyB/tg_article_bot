@@ -19,6 +19,37 @@ CREATE TABLE IF NOT EXISTS sources (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- RSS Worker fields: track crawl time and per-source interval.
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS last_fetched_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE sources ADD COLUMN IF NOT EXISTS fetch_interval_hours INTEGER DEFAULT 2;
+
+-- Index for efficient worker scheduling query (active sources due for a fetch)
+CREATE INDEX IF NOT EXISTS idx_sources_active_fetched ON sources(is_active, last_fetched_at);
+
+-- Таблица для отслеживания обработанных писем
+CREATE TABLE IF NOT EXISTS processed_emails (
+    message_id TEXT PRIMARY KEY,
+    subject TEXT,
+    sender TEXT,
+    processed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Таблица для черного списка доменов и паттернов ссылок
+CREATE TABLE IF NOT EXISTS email_filters (
+    id SERIAL PRIMARY KEY,
+    pattern TEXT UNIQUE NOT NULL,
+    is_blocked BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Базовый набор фильтров по умолчанию
+INSERT INTO email_filters (pattern) VALUES
+  ('unsubscribe'), ('optout'), ('preferences'), ('privacy-policy'),
+  ('facebook.com'), ('twitter.com'), ('linkedin.com'), ('instagram.com'),
+  ('youtube.com'), ('t.me'), ('github.com'), ('google.com'), ('apple.com')
+ON CONFLICT (pattern) DO NOTHING;
+
+
 -- Создаем таблицу пользователей
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,

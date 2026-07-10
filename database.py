@@ -257,6 +257,7 @@ class DatabaseManager:
         source_type: str = "web",
         language: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        fetch_interval_hours: int = 2,
     ) -> int:
         """Create or update a content source."""
         if not self.pool:
@@ -264,13 +265,14 @@ class DatabaseManager:
         async with self.pool.acquire() as conn:
             if url:
                 return await conn.fetchval(
-                    """INSERT INTO sources (name, url, source_type, language, metadata)
-                       VALUES ($1, $2, $3, $4, $5::jsonb)
+                    """INSERT INTO sources (name, url, source_type, language, metadata, fetch_interval_hours)
+                       VALUES ($1, $2, $3, $4, $5::jsonb, $6)
                        ON CONFLICT (url) DO UPDATE SET
                            name = EXCLUDED.name,
                            source_type = EXCLUDED.source_type,
                            language = COALESCE(EXCLUDED.language, sources.language),
                            metadata = sources.metadata || EXCLUDED.metadata,
+                           fetch_interval_hours = EXCLUDED.fetch_interval_hours,
                            updated_at = CURRENT_TIMESTAMP
                        RETURNING id""",
                     name,
@@ -278,17 +280,139 @@ class DatabaseManager:
                     source_type,
                     language,
                     json.dumps(metadata or {}),
+                    fetch_interval_hours,
                 )
 
             return await conn.fetchval(
-                """INSERT INTO sources (name, source_type, language, metadata)
-                   VALUES ($1, $2, $3, $4::jsonb)
+                """INSERT INTO sources (name, source_type, language, metadata, fetch_interval_hours)
+                   VALUES ($1, $2, $3, $4::jsonb, $5)
                    RETURNING id""",
                 name,
                 source_type,
                 language,
                 json.dumps(metadata or {}),
+                fetch_interval_hours,
             )
+
+    async def get_sources(
+        self,
+        active_only: bool = True,
+        due_for_fetch: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Return content sources from the database.
+
+        Args:
+            active_only: When True (default) only active sources are returned.
+            due_for_fetch: When True only sources whose next scheduled crawl has
+                arrived are returned. Requires active_only=True to be meaningful.
+        """
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            query = """
+                SELECT
+                    id, name, url, source_type, language, is_active,
+                    fetch_interval_hours, last_fetched_at, metadata,
+                    created_at, updated_at
+                FROM sources
+                WHERE TRUE
+            """
+            conditions = []
+            if active_only:
+                conditions.append("is_active = TRUE")
+            if due_for_fetch:
+                conditions.append(
+                    "(last_fetched_at IS NULL OR "
+                    "last_fetched_at < NOW() - fetch_interval_hours * INTERVAL '1 hour')"
+                )
+            if conditions:
+                query += " AND " + " AND ".join(conditions)
+            query += " ORDER BY last_fetched_at ASC NULLS FIRST, id ASC"
+
+            rows = await conn.fetch(query)
+            return [dict(row) for row in rows]
+
+    async def update_source_last_fetched(self, source_id: int) -> None:
+        """Atomically update last_fetched_at to the current timestamp for a source.
+
+        Args:
+            source_id: Primary key of the source to update.
+        """
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE sources SET last_fetched_at = NOW(), updated_at = NOW() WHERE id = $1",
+                source_id,
+            )
+        logger.info("Updated last_fetched_at for source_id=%d", source_id)
+
+    async def delete_source(self, source_id: int) -> bool:
+        """Soft-delete a source by setting is_active = FALSE.
+
+        Returns:
+            True if the source was found and deactivated, False otherwise.
+        """
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE sources SET is_active = FALSE, updated_at = NOW() WHERE id = $1",
+                source_id,
+            )
+        affected = int(result.split()[-1])
+        if affected:
+            logger.info("Soft-deleted source_id=%d (is_active set to FALSE)", source_id)
+        return bool(affected)
+
+    async def is_email_processed(self, message_id: str) -> bool:
+        """Check if an email message has already been processed."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            exists = await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM processed_emails WHERE message_id = $1)",
+                message_id,
+            )
+            return bool(exists)
+
+    async def mark_email_processed(self, message_id: str, subject: str, sender: str) -> None:
+        """Mark an email message as processed to prevent double spending/parsing."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO processed_emails (message_id, subject, sender)
+                   VALUES ($1, $2, $3)
+                   ON CONFLICT (message_id) DO NOTHING""",
+                message_id,
+                subject,
+                sender,
+            )
+        logger.info("Marked email message_id=%s as processed", message_id)
+
+    async def get_email_filters(self) -> List[str]:
+        """Fetch all blocked link patterns/domains."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("SELECT pattern FROM email_filters WHERE is_blocked = TRUE")
+            return [row["pattern"] for row in rows]
+
+    async def add_email_filter(self, pattern: str) -> None:
+        """Dynamically add a new pattern to the links block list."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO email_filters (pattern, is_blocked)
+                   VALUES ($1, TRUE)
+                   ON CONFLICT (pattern) DO UPDATE SET is_blocked = TRUE, created_at = NOW()""",
+                pattern.strip().lower(),
+            )
+        logger.info("Added email link filter pattern: %s", pattern)
+
+
 
     async def update_article_intelligence_fields(
         self,
@@ -512,7 +636,7 @@ class DatabaseManager:
                 c.id AS chunk_id,
                 c.chunk_index,
                 c.text AS chunk_text,
-                e.embedding::double precision[] AS embedding,
+                e.embedding::text AS embedding,
                 e.model
             FROM article_embeddings e
             JOIN article_chunks c ON c.id = e.chunk_id
@@ -539,7 +663,18 @@ class DatabaseManager:
             raise RuntimeError("Database pool not initialized")
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
-            return [dict(row) for row in rows]
+            results = []
+            for row in rows:
+                row_dict = dict(row)
+                if isinstance(row_dict.get("embedding"), str):
+                    # Parse '[0.123,0.456,...]' string representation into list of floats
+                    row_dict["embedding"] = [
+                        float(val)
+                        for val in row_dict["embedding"].strip("[]").split(",")
+                        if val
+                    ]
+                results.append(row_dict)
+            return results
 
     async def create_topic_query(
         self,

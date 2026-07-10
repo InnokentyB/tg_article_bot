@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 # Global variables
 db_manager = None
+rss_worker = None
+gmail_worker = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -49,21 +51,57 @@ async def lifespan(app: FastAPI):
                 async with db_manager.pool.acquire() as conn:
                     await conn.execute(schema_sql)
                 logger.info("✅ Database schema applied successfully")
+
+                # Apply seeds if seeds.sql exists
+                seeds_path = os.getenv("DATABASE_SEEDS_PATH", "seeds.sql")
+                if os.path.exists(seeds_path):
+                    with open(seeds_path, "r", encoding="utf-8") as seeds_file:
+                        seeds_sql = seeds_file.read()
+                    async with db_manager.pool.acquire() as conn:
+                        await conn.execute(seeds_sql)
+                    logger.info("✅ Database seeds applied successfully")
             else:
                 logger.warning(f"⚠️ Database schema file not found: {schema_path}")
         except Exception as schema_error:
-            logger.error(f"❌ Database schema application failed: {schema_error}")
+            logger.error(f"❌ Database schema application/seeding failed: {schema_error}")
             raise
         
         logger.info("✅ Database initialized successfully")
     except Exception as e:
         logger.warning(f"⚠️ Database initialization failed: {e}")
         db_manager = None
-    
+
+    # Start background RSS worker (only when DB is available)
+    global rss_worker, gmail_worker
+    if db_manager:
+        try:
+            from rss_worker import RSSWorker
+            rss_worker = RSSWorker(db_manager, ingest_fn=ingest_url_payload)
+            rss_worker.start()
+            logger.info("✅ RSS worker started")
+        except Exception as worker_err:
+            logger.warning(f"⚠️ RSS worker failed to start: {worker_err}")
+            rss_worker = None
+
+        try:
+            from gmail_worker import GmailWorker
+            gmail_worker = GmailWorker(db_manager, ingest_fn=ingest_url_payload)
+            gmail_worker.start()
+            logger.info("✅ Gmail worker started")
+        except Exception as gmail_err:
+            logger.warning(f"⚠️ Gmail worker failed to start: {gmail_err}")
+            gmail_worker = None
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down API server...")
+    if rss_worker:
+        rss_worker.stop()
+        logger.info("RSS worker stopped")
+    if gmail_worker:
+        gmail_worker.stop()
+        logger.info("Gmail worker stopped")
     if db_manager:
         await db_manager.close()
         logger.info("Database connection closed")
@@ -515,6 +553,139 @@ async def ingest_rss(feed_data: dict, auth: bool = Depends(verify_api_key)):
         "results": results,
     }
 
+@app.get("/sources")
+async def list_sources(active_only: bool = True, auth: bool = Depends(verify_api_key)):
+    """List all content sources registered in the system.
+
+    Query parameters:
+        active_only: If true (default) only active sources are returned.
+    """
+    global db_manager
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+    sources = await db_manager.get_sources(active_only=active_only)
+    # Serialize datetimes to ISO strings for JSON compatibility
+    serialized = []
+    for row in sources:
+        row_copy = dict(row)
+        for key in ("last_fetched_at", "created_at", "updated_at"):
+            if row_copy.get(key) is not None:
+                row_copy[key] = row_copy[key].isoformat()
+        serialized.append(row_copy)
+    return {"sources": serialized, "count": len(serialized)}
+
+
+@app.post("/sources")
+async def add_source(source_data: dict, auth: bool = Depends(verify_api_key)):
+    """Register a new RSS/web source for automated crawling.
+
+    Body fields:
+        feed_url (required): The RSS feed URL.
+        name: Human-readable name (falls back to feed URL).
+        language: ISO 639-1 language code, e.g. "ru" or "en".
+        fetch_interval_hours: How often to crawl (default: 2).
+    """
+    global db_manager
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    feed_url = (source_data.get("feed_url") or "").strip()
+    if not feed_url:
+        raise HTTPException(status_code=400, detail="feed_url is required")
+
+    name = (source_data.get("name") or feed_url).strip()
+    language = source_data.get("language")
+    fetch_interval_hours = int(source_data.get("fetch_interval_hours") or 2)
+    fetch_interval_hours = max(1, min(fetch_interval_hours, 24 * 7))  # 1h – 7d
+
+    source_id = await db_manager.upsert_source(
+        name=name,
+        url=feed_url,
+        source_type="rss",
+        language=language,
+        fetch_interval_hours=fetch_interval_hours,
+        metadata={"added_via": "api"},
+    )
+    logger.info("Source registered: id=%d name=%r url=%s", source_id, name, feed_url)
+    return {
+        "status": "created",
+        "source_id": source_id,
+        "name": name,
+        "feed_url": feed_url,
+        "fetch_interval_hours": fetch_interval_hours,
+    }
+
+
+@app.delete("/sources/{source_id}")
+async def remove_source(source_id: int, auth: bool = Depends(verify_api_key)):
+    """Soft-delete a source (sets is_active=false without removing data).
+
+    Path parameters:
+        source_id: The numeric id of the source.
+    """
+    global db_manager
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    deleted = await db_manager.delete_source(source_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
+    return {"status": "deactivated", "source_id": source_id}
+
+
+@app.post("/sources/{source_id}/fetch")
+async def fetch_source_now(source_id: int, auth: bool = Depends(verify_api_key)):
+    """Manually trigger an immediate RSS crawl for a specific source.
+
+    Path parameters:
+        source_id: The numeric id of the source to crawl immediately.
+    """
+    global db_manager, rss_worker
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    sources = await db_manager.get_sources(active_only=False)
+    source = next((s for s in sources if s["id"] == source_id), None)
+    if not source:
+        raise HTTPException(status_code=404, detail=f"Source {source_id} not found")
+    if not source.get("is_active"):
+        raise HTTPException(status_code=400, detail=f"Source {source_id} is inactive")
+
+    if rss_worker:
+        # Delegate to the worker for consistent logic and logging
+        await rss_worker._fetch_source(source)
+        return {"status": "fetched", "source_id": source_id, "name": source.get("name")}
+
+    # Fallback: no worker instance (disabled), use ingest/rss directly
+    feed_url = source.get("url")
+    if not feed_url:
+        raise HTTPException(status_code=400, detail="Source has no feed URL")
+    result = await ingest_rss(
+        {
+            "feed_url": feed_url,
+            "source_name": source.get("name"),
+            "language": source.get("language"),
+        },
+        auth=True,
+    )
+    return {"status": "fetched", "source_id": source_id, **result}
+
+
+@app.post("/gmail/fetch")
+async def fetch_gmail_now(auth: bool = Depends(verify_api_key)):
+    """Manually trigger Gmail scan for unread messages containing article links."""
+    global gmail_worker
+    if not gmail_worker:
+        raise HTTPException(
+            status_code=503,
+            detail="Gmail worker is not active or disabled via GMAIL_ENABLED=false",
+        )
+
+    # Trigger one poll cycle
+    await gmail_worker.poll_once()
+    return {"status": "completed", "message": "Gmail fetch cycle completed"}
+
+
 @app.post("/embeddings/rebuild")
 async def rebuild_embeddings(request_data: dict, auth: bool = Depends(verify_api_key)):
     """Rebuild chunk embeddings for an article."""
@@ -799,6 +970,7 @@ async def create_article(article_data: dict, auth: bool = Depends(verify_api_key
         title = article_data.get('title')
         source = article_data.get('source')
         telegram_user_id = article_data.get('telegram_user_id')
+        language = article_data.get('language')
         
         logger.info(f"Creating article: {title}")
         
@@ -829,6 +1001,7 @@ async def create_article(article_data: dict, auth: bool = Depends(verify_api_key
                     summary=None,
                     source=source,
                     categories_user=categories,
+                    language=language,
                     telegram_user_id=telegram_user_id
                 )
                 

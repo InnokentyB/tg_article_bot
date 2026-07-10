@@ -55,6 +55,7 @@ def test_mvp_article_embedding_search_and_review(
             "title": f"Pytest MVP article {stamp}",
             "text": article_text,
             "source": "pytest-local",
+            "language": f"l{stamp % 100000000}",
         },
         headers=auth_headers,
     )
@@ -79,6 +80,7 @@ def test_mvp_article_embedding_search_and_review(
         json={
             "topic": "enterprise AI agents with approval workflows and audit logs",
             "max_sources": 3,
+            "language": f"l{stamp % 100000000}",
         },
         headers=auth_headers,
     )
@@ -92,6 +94,7 @@ def test_mvp_article_embedding_search_and_review(
         json={
             "topic": "enterprise AI agents with approval workflows and audit logs",
             "max_sources": 3,
+            "language": f"l{stamp % 100000000}",
         },
         headers=auth_headers,
     )
@@ -151,6 +154,7 @@ def test_vector_search_uses_db(
             "title": f"pgvector test article {stamp}",
             "text": article_text,
             "source": "pytest-vector",
+            "language": f"v{stamp % 100000000}",
         },
         headers=auth_headers,
     )
@@ -172,6 +176,7 @@ def test_vector_search_uses_db(
         json={
             "topic": "vector databases cosine distance embeddings",
             "max_sources": 5,
+            "language": f"v{stamp % 100000000}",
         },
         headers=auth_headers,
     )
@@ -187,3 +192,96 @@ def test_vector_search_uses_db(
     # Our article must appear somewhere in the results.
     assert any(r["article_id"] == article_id for r in search["results"])
 
+
+def test_sources_crud(
+    client: httpx.Client,
+    auth_headers: dict[str, str],
+) -> None:
+    stamp = int(time.time())
+    feed_url = f"https://example.com/feed-{stamp}.xml"
+    source_name = f"Test RSS Feed {stamp}"
+
+    # 1. Create a source
+    add_resp = client.post(
+        "/sources",
+        json={
+            "feed_url": feed_url,
+            "name": source_name,
+            "language": "ru",
+            "fetch_interval_hours": 3,
+        },
+        headers=auth_headers,
+    )
+    assert add_resp.status_code == 200
+    added = add_resp.json()
+    assert added["status"] == "created"
+    source_id = added["source_id"]
+    assert added["feed_url"] == feed_url
+    assert added["fetch_interval_hours"] == 3
+
+    # 2. Get list of active sources and check if it's there
+    list_resp = client.get("/sources", headers=auth_headers)
+    assert list_resp.status_code == 200
+    sources_list = list_resp.json()["sources"]
+    matched = [s for s in sources_list if s["id"] == source_id]
+    assert matched
+    assert matched[0]["name"] == source_name
+    assert matched[0]["is_active"] is True
+    assert matched[0]["fetch_interval_hours"] == 3
+
+    # 3. Soft-delete the source
+    delete_resp = client.delete(f"/sources/{source_id}", headers=auth_headers)
+    assert delete_resp.status_code == 200
+    assert delete_resp.json()["status"] == "deactivated"
+
+    # 4. Check that it's no longer in active list
+    list_active_resp = client.get("/sources?active_only=true", headers=auth_headers)
+    assert list_active_resp.status_code == 200
+    active_sources = list_active_resp.json()["sources"]
+    assert not any(s["id"] == source_id for s in active_sources)
+
+    # 5. Check that it IS in the full list with is_active = False
+    list_all_resp = client.get("/sources?active_only=false", headers=auth_headers)
+    assert list_all_resp.status_code == 200
+    all_sources = list_all_resp.json()["sources"]
+    matched_all = [s for s in all_sources if s["id"] == source_id]
+    assert matched_all
+    assert matched_all[0]["is_active"] is False
+
+
+def test_source_manual_fetch(
+    client: httpx.Client,
+    auth_headers: dict[str, str],
+) -> None:
+    stamp = int(time.time())
+    # We use a real valid feed from RFC Editor that we know parser can digest
+    feed_url = "https://www.rfc-editor.org/rfcrss.xml"
+    source_name = f"Manual Fetch Test {stamp}"
+
+    # 1. Create active source
+    add_resp = client.post(
+        "/sources",
+        json={
+            "feed_url": feed_url,
+            "name": source_name,
+            "language": "en",
+        },
+        headers=auth_headers,
+    )
+    assert add_resp.status_code == 200
+    source_id = add_resp.json()["source_id"]
+
+    # 2. Trigger manual fetch
+    fetch_resp = client.post(f"/sources/{source_id}/fetch", headers=auth_headers)
+    assert fetch_resp.status_code == 200
+    fetch_data = fetch_resp.json()
+    assert fetch_data["status"] == "fetched"
+    assert fetch_data["source_id"] == source_id
+
+    # 3. Check list and verify last_fetched_at is set
+    list_resp = client.get("/sources?active_only=false", headers=auth_headers)
+    assert list_resp.status_code == 200
+    sources = list_resp.json()["sources"]
+    matched = [s for s in sources if s["id"] == source_id]
+    assert matched
+    assert matched[0]["last_fetched_at"] is not None

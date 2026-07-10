@@ -353,6 +353,108 @@ async def api_get_users(current_user: User = Depends(get_current_admin_user)):
     users = get_all_users()
     return {"users": [user.dict() for user in users]}
 
+
+def _api_base() -> str:
+    """Return the base URL of the internal API server."""
+    return os.getenv("API_BASE_URL", "http://api:5000").rstrip("/")
+
+
+def _api_headers() -> Dict[str, str]:
+    """Return auth headers for internal API calls."""
+    api_key = os.getenv("API_KEY", "")
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+@app.get("/sources", response_class=HTMLResponse)
+async def sources_page(request: Request, access_token: Optional[str] = Cookie(None)):
+    """Render the sources management page."""
+    if not access_token:
+        return RedirectResponse(url="/", status_code=302)
+    try:
+        resp = requests.get(
+            f"{_api_base()}/sources",
+            headers=_api_headers(),
+            params={"active_only": "false"},
+            timeout=10,
+        )
+        sources = resp.json().get("sources", []) if resp.ok else []
+    except Exception as exc:
+        logger.error("Failed to fetch sources from API: %s", exc)
+        sources = []
+
+    return templates.TemplateResponse(
+        "sources.html",
+        {"request": request, "sources": sources},
+    )
+
+
+@app.post("/sources", response_class=HTMLResponse)
+async def add_source_form(
+    request: Request,
+    feed_url: str = Form(...),
+    name: str = Form(""),
+    language: str = Form(""),
+    fetch_interval_hours: int = Form(2),
+    access_token: Optional[str] = Cookie(None),
+):
+    """Handle add-source form submission."""
+    if not access_token:
+        return RedirectResponse(url="/", status_code=302)
+    try:
+        requests.post(
+            f"{_api_base()}/sources",
+            headers=_api_headers(),
+            json={
+                "feed_url": feed_url,
+                "name": name or feed_url,
+                "language": language or None,
+                "fetch_interval_hours": fetch_interval_hours,
+            },
+            timeout=15,
+        )
+    except Exception as exc:
+        logger.error("Failed to add source via API: %s", exc)
+    return RedirectResponse(url="/sources", status_code=302)
+
+
+@app.post("/sources/{source_id}/delete", response_class=HTMLResponse)
+async def delete_source_form(
+    source_id: int,
+    access_token: Optional[str] = Cookie(None),
+):
+    """Handle delete-source form submission (soft delete)."""
+    if not access_token:
+        return RedirectResponse(url="/", status_code=302)
+    try:
+        requests.delete(
+            f"{_api_base()}/sources/{source_id}",
+            headers=_api_headers(),
+            timeout=10,
+        )
+    except Exception as exc:
+        logger.error("Failed to delete source %d via API: %s", source_id, exc)
+    return RedirectResponse(url="/sources", status_code=302)
+
+
+@app.post("/sources/{source_id}/fetch-now", response_class=HTMLResponse)
+async def fetch_source_form(
+    source_id: int,
+    access_token: Optional[str] = Cookie(None),
+):
+    """Trigger an immediate RSS crawl for a source."""
+    if not access_token:
+        return RedirectResponse(url="/", status_code=302)
+    try:
+        requests.post(
+            f"{_api_base()}/sources/{source_id}/fetch",
+            headers=_api_headers(),
+            timeout=60,
+        )
+    except Exception as exc:
+        logger.error("Failed to trigger fetch for source %d: %s", source_id, exc)
+    return RedirectResponse(url="/sources", status_code=302)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

@@ -24,6 +24,10 @@ class BotConfig:
     # Optional AI services
     OPENAI_API_KEY: Optional[str] = os.getenv('OPENAI_API_KEY')
     
+    # TranscribeIt Integration
+    TRANSCRIBEIT_API_KEY: Optional[str] = os.getenv('TRANSCRIBEIT_API_KEY')
+    TRANSCRIBEIT_API_URL: str = os.getenv('TRANSCRIBEIT_API_URL', 'https://www.transcribeit.ru')
+    
     @classmethod
     def validate_article_bot(cls) -> bool:
         """Validate that all required variables for article bot are set"""

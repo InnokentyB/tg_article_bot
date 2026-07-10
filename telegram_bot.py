@@ -12,13 +12,19 @@ try:
     load_dotenv()
 except ImportError:
     pass
-from aiogram import Bot, Dispatcher, types
+
+
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, MessageReactionUpdated, MessageReactionCountUpdated
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+
+import uuid
+from urllib.parse import urlparse
+from transcribeit_client import TranscribeItClient
 
 from database import DatabaseManager
 from text_extractor import TextExtractor
@@ -28,6 +34,7 @@ from telegram_reactions import TelegramReactionsTracker
 from external_source_tracker import ExternalSourceTracker
 
 logger = logging.getLogger(__name__)
+
 
 class ArticleStates(StatesGroup):
     waiting_for_categories = State()
@@ -48,6 +55,9 @@ class ArticleBot:
         self.advanced_categorizer = AdvancedCategorizer()
         self.reactions_tracker = TelegramReactionsTracker(self.db)
         self.external_tracker = ExternalSourceTracker(self.db)
+        self.transcribeit_client = TranscribeItClient()
+        self.pending_files = {}
+        self.pending_urls = {}
         
         # Register handlers
         self.setup_handlers()
@@ -63,10 +73,18 @@ class ArticleBot:
         # FSM states have priority over general message handler
         self.dp.message(ArticleStates.waiting_for_categories)(self.process_categories)
         
+        # Handle video messages, video notes and voice messages (before general handler)
+        self.dp.message(F.video)(self.process_video_message)
+        self.dp.message(F.video_note)(self.process_video_note_message)
+        self.dp.message(F.voice)(self.process_voice_message)
+        
         # General message handler last
         self.dp.message()(self.process_message)
         
         # Callback handlers
+        self.dp.callback_query(lambda c: c.data and c.data.startswith('transcribe_file:'))(self.callback_transcribe_file)
+        self.dp.callback_query(lambda c: c.data and c.data.startswith('transcribe_url:'))(self.callback_transcribe_url)
+        self.dp.callback_query(lambda c: c.data == 'cancel_transcribe')(self.callback_cancel_transcribe)
         self.dp.callback_query(lambda c: c.data and c.data.startswith('add_categories:'))(self.callback_add_categories)
         self.dp.callback_query(lambda c: c.data and c.data.startswith('done:'))(self.callback_done)
         self.dp.callback_query(lambda c: c.data and c.data.startswith('stats:'))(self.callback_show_stats)
@@ -231,10 +249,369 @@ class ArticleBot:
         
         # Check if it's a URL
         if self.text_extractor.is_valid_url(text):
-            await self.process_url(message, text)
+            if self.is_video_url(text):
+                await self.suggest_video_url_transcription(message, text)
+            else:
+                await self.process_url(message, text)
         else:
             await self.process_text(message, text)
     
+    def is_video_url(self, url: str) -> bool:
+        """Check if URL points to a video platform (like YouTube)"""
+        try:
+            parsed = urlparse(url)
+            domain = (parsed.netloc or "").lower()
+            if domain.startswith("www."):
+                domain = domain[4:]
+            
+            video_domains = {
+                "youtube.com", "youtu.be", "rutube.ru", "vimeo.com", 
+                "vk.com/video", "vkvideo.ru", "vk.com"
+            }
+            # Special check for vk video paths or domains
+            is_video = any(vd in domain for vd in video_domains)
+            if domain == "vk.com" and "video" not in parsed.path.lower():
+                is_video = False
+            return is_video
+        except Exception:
+            return False
+
+    async def suggest_video_url_transcription(self, message: Message, url: str) -> None:
+        """Suggest user to transcribe video from URL"""
+        if not self.transcribeit_client.is_configured():
+            await message.answer("⚠️ Обнаружена ссылка на видео, но сервис транскрибации TranscribeIt не настроен.")
+            return
+
+        url_uuid = str(uuid.uuid4())[:8]
+        self.pending_urls[url_uuid] = url
+
+        builder = InlineKeyboardBuilder()
+        builder.button(text="🎙️ Транскрибировать", callback_data=f"transcribe_url:{url_uuid}")
+        builder.button(text="❌ Отклонить", callback_data="cancel_transcribe")
+
+        await message.answer(
+            "📹 *Обнаружена ссылка на видео!*\n\nХотите отправить это видео на транскрибацию в TranscribeIt?",
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+
+    async def process_video_message(self, message: Message) -> None:
+        """Handle incoming Telegram video messages"""
+        if not message.video:
+            return
+
+        if not self.transcribeit_client.is_configured():
+            await message.answer("⚠️ Получено видео, но сервис транскрибации TranscribeIt не настроен.")
+            return
+
+        file_uuid = str(uuid.uuid4())[:8]
+        self.pending_files[file_uuid] = {
+            "file_id": message.video.file_id,
+            "filename": f"video_{message.video.file_unique_id}.mp4",
+            "media_type": "video"
+        }
+
+        builder = InlineKeyboardBuilder()
+        builder.button(text="🎙️ Транскрибировать", callback_data=f"transcribe_file:{file_uuid}")
+        builder.button(text="❌ Отклонить", callback_data="cancel_transcribe")
+
+        await message.reply(
+            "📹 *Получено видео файл!*\n\nХотите отправить его на транскрибацию в TranscribeIt?",
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+
+    async def process_video_note_message(self, message: Message) -> None:
+        """Handle incoming Telegram video note (round circle) messages"""
+        if not message.video_note:
+            return
+
+        if not self.transcribeit_client.is_configured():
+            await message.answer("⚠️ Получено видео-сообщение, но сервис транскрибации TranscribeIt не настроен.")
+            return
+
+        file_uuid = str(uuid.uuid4())[:8]
+        self.pending_files[file_uuid] = {
+            "file_id": message.video_note.file_id,
+            "filename": f"note_{message.video_note.file_unique_id}.mp4",
+            "media_type": "video_note"
+        }
+
+        builder = InlineKeyboardBuilder()
+        builder.button(text="🎙️ Транскрибировать", callback_data=f"transcribe_file:{file_uuid}")
+        builder.button(text="❌ Отклонить", callback_data="cancel_transcribe")
+
+        await message.reply(
+            "🎬 *Получено видео-сообщение (круг)*!\n\nХотите отправить его на транскрибацию в TranscribeIt?",
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+
+    async def process_voice_message(self, message: Message) -> None:
+        """Handle incoming Telegram voice messages"""
+        if not message.voice:
+            return
+
+        if not self.transcribeit_client.is_configured():
+            await message.answer("⚠️ Получено голосовое сообщение, но сервис транскрибации TranscribeIt не настроен.")
+            return
+
+        file_uuid = str(uuid.uuid4())[:8]
+        self.pending_files[file_uuid] = {
+            "file_id": message.voice.file_id,
+            "filename": f"voice_{message.voice.file_unique_id}.ogg",
+            "media_type": "voice"
+        }
+
+        builder = InlineKeyboardBuilder()
+        builder.button(text="🎙️ Транскрибировать", callback_data=f"transcribe_file:{file_uuid}")
+        builder.button(text="❌ Отклонить", callback_data="cancel_transcribe")
+
+        await message.reply(
+            "🎙️ *Получено голосовое сообщение!*\n\nХотите отправить его на транскрибацию в TranscribeIt?",
+            reply_markup=builder.as_markup(),
+            parse_mode="Markdown"
+        )
+
+    async def callback_transcribe_url(self, callback: CallbackQuery) -> None:
+        """Handle transcription callback for video URLs"""
+        await callback.answer()
+        data = callback.data
+        if not data or not callback.message:
+            return
+
+        url_uuid = data.split(":")[1]
+        url = self.pending_urls.pop(url_uuid, None)
+
+        if not url:
+            await callback.message.edit_text("❌ Ссылка устарела или уже была обработана.")
+            return
+
+        status_msg = await callback.message.edit_text("🔄 Отправляю ссылку в TranscribeIt...")
+        
+        filename = os.path.basename(urlparse(url).path) or "audio.mp3"
+        if not filename.endswith((".mp3", ".mp4", ".wav", ".m4a", ".webm", ".ogg")):
+            await status_msg.edit_text(
+                "ℹ️ Для YouTube и внешних видео-платформ отправьте само видео или аудиофайл непосредственно боту."
+            )
+            return
+
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url)
+                if response.status_code != 200:
+                    await status_msg.edit_text("❌ Не удалось скачать медиафайл по ссылке.")
+                    return
+                file_data = response.content
+        except Exception as e:
+            await status_msg.edit_text(f"❌ Ошибка при скачивании файла: {e}")
+            return
+
+        transaction_id = await self.transcribeit_client.upload_file(
+            file_path_or_data=file_data,
+            filename=filename,
+            language="ru"
+        )
+
+        if not transaction_id:
+            await status_msg.edit_text("❌ Ошибка отправки файла в TranscribeIt.")
+            return
+
+        await status_msg.edit_text("⏳ Видео отправлено в TranscribeIt. Начинаю транскрибацию...")
+        asyncio.create_task(
+            self.start_transcription_polling(
+                transaction_id=transaction_id,
+                chat_id=callback.message.chat.id,
+                message_id=status_msg.message_id,
+                original_link=url,
+                title=f"Транскрипт: {filename}",
+                user_id=callback.from_user.id if callback.from_user else None
+            )
+        )
+
+    async def callback_transcribe_file(self, callback: CallbackQuery) -> None:
+        """Handle transcription callback for Telegram files"""
+        await callback.answer()
+        data = callback.data
+        if not data or not callback.message:
+            return
+
+        file_uuid = data.split(":")[1]
+        file_info_data = self.pending_files.pop(file_uuid, None)
+
+        if not file_info_data:
+            await callback.message.edit_text("❌ Файл устарел или уже был обработан.")
+            return
+
+        status_msg = await callback.message.edit_text("🔄 Скачиваю файл из Telegram...")
+        
+        file_id = file_info_data["file_id"]
+        filename = file_info_data["filename"]
+
+        try:
+            file_info = await self.bot.get_file(file_id)
+            os.makedirs("/tmp/transcribeit", exist_ok=True)
+            local_path = f"/tmp/transcribeit/{filename}"
+            
+            await self.bot.download_file(file_info.file_path, local_path)
+            await status_msg.edit_text("🔄 Отправляю файл в TranscribeIt...")
+            
+            transaction_id = await self.transcribeit_client.upload_file(
+                file_path_or_data=local_path,
+                filename=filename,
+                language="ru"
+            )
+            
+            if os.path.exists(local_path):
+                os.remove(local_path)
+                
+            if not transaction_id:
+                await status_msg.edit_text("❌ Ошибка отправки файла в TranscribeIt.")
+                return
+
+            await status_msg.edit_text("⏳ Файл загружен в TranscribeIt. Начинаю транскрибацию...")
+            
+            asyncio.create_task(
+                self.start_transcription_polling(
+                    transaction_id=transaction_id,
+                    chat_id=callback.message.chat.id,
+                    message_id=status_msg.message_id,
+                    original_link=f"telegram_file_{file_id[:15]}",
+                    title=f"Транскрипт: {filename}",
+                    user_id=callback.from_user.id if callback.from_user else None
+                )
+            )
+
+        except Exception as e:
+            logger.error(f"Error handling file transcription: {e}")
+            await status_msg.edit_text(f"❌ Произошла ошибка: {e}")
+
+    async def start_transcription_polling(
+        self, 
+        transaction_id: str, 
+        chat_id: int, 
+        message_id: int, 
+        original_link: str, 
+        title: str,
+        user_id: Optional[int]
+    ) -> None:
+        """Poll TranscribeIt task status and notify user upon completion"""
+        max_attempts = 120
+        attempt = 0
+        
+        while attempt < max_attempts:
+            await asyncio.sleep(5)
+            attempt += 1
+            
+            result = await self.transcribeit_client.get_transcription(transaction_id)
+            if not result:
+                continue
+                
+            status = result.get("status")
+            
+            if status == "processing":
+                continue
+            elif status == "failed":
+                try:
+                    await self.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text="❌ Транскрибация завершилась ошибкой на стороне TranscribeIt."
+                    )
+                except Exception:
+                    pass
+                return
+            elif status == "completed":
+                text = result.get("text", "")
+                if not text:
+                    try:
+                        await self.bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            text="⚠️ Транскрибация завершена, но полученный текст пуст."
+                        )
+                    except Exception:
+                        pass
+                    return
+                
+                try:
+                    language = self.categorizer.detect_language(text)
+                    categories = self.categorizer.categorize_article(text, title)
+                    
+                    advanced_categories = None
+                    if self.advanced_categorizer.is_available():
+                        try:
+                            advanced_categories = await self.advanced_categorizer.categorize_article(
+                                text, title, language, []
+                            )
+                        except Exception as e:
+                            logger.error(f"Advanced categorization for transcript failed: {e}")
+                            
+                    summary = advanced_categories.get('summary') if advanced_categories else None
+                    if not summary:
+                        summary = self.text_extractor.generate_summary(text)
+                        
+                    article_id, _ = await self.db.save_article(
+                        title=title,
+                        text=text,
+                        summary=summary,
+                        source="TranscribeIt",
+                        author="TranscribeIt Bot",
+                        original_link=original_link,
+                        categories_advanced=advanced_categories,
+                        language=language,
+                        telegram_user_id=user_id
+                    )
+                    
+                    await self.db.update_article_categories(article_id, categories)
+                    
+                    success_text = (
+                        f"✅ *Транскрибация завершена!*\n\n"
+                        f"📰 *Текст успешно сохранен в базу знаний!*\n"
+                        f"🔑 *ID Статьи:* {article_id}\n"
+                        f"📂 *Категории:* {', '.join(categories)}\n\n"
+                        f"📝 *Фрагмент текста:*\n_{text[:300]}..._\n\n"
+                        f"Вы можете прочитать полную версию в веб-интерфейсе."
+                    )
+                    
+                    try:
+                        await self.bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            text=success_text,
+                            parse_mode="Markdown"
+                        )
+                    except Exception:
+                        pass
+                        
+                except Exception as save_err:
+                    logger.error(f"Failed to save transcription result: {save_err}")
+                    try:
+                        await self.bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            text=f"❌ Транскрибация завершена, но произошла ошибка сохранения в БД: {save_err}"
+                        )
+                    except Exception:
+                        pass
+                return
+
+        try:
+            await self.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text="⏱️ Превышено время ожидания транскрибации (10 минут)."
+            )
+        except Exception:
+            pass
+
+    async def callback_cancel_transcribe(self, callback: CallbackQuery) -> None:
+        """Handle cancellation of transcription"""
+        await callback.answer("Отменено")
+        if callback.message and hasattr(callback.message, 'edit_text'):
+            await callback.message.edit_text("❌ Транскрибация отменена пользователем.")
+
     async def process_url(self, message: Message, url: str):
         """Process URL message"""
         status_msg = await message.answer("🔄 Извлекаю текст из ссылки...")
