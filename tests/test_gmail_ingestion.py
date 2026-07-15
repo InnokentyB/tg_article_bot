@@ -1,10 +1,14 @@
 import asyncio
 import os
+import sys
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from database import DatabaseManager
 from gmail_worker import GmailWorker
@@ -78,6 +82,40 @@ async def test_gmail_worker_link_extraction() -> None:
     links_text = worker._extract_links(text_body)
     assert "https://tldr.tech/newsletter" in links_text
     assert "https://google.com?q=agent" in links_text
+
+
+@pytest.mark.asyncio
+async def test_gmail_worker_normalizes_tracking_and_skips_assets(monkeypatch) -> None:
+    """Verify newsletter wrappers are unwrapped and obvious assets/service links are ignored."""
+    monkeypatch.setenv("GMAIL_MAX_LINKS_PER_EMAIL", "3")
+    worker = GmailWorker(db_manager=None, ingest_fn=None)
+
+    html_body = """
+    <html><body>
+      <a href="https://tracking.tldrnewsletter.com/CL0/https:%2F%2Fexample.com%2Fpost%3Futm_source=tldrnewsletter%26x=1/1/token">Article</a>
+      <a href="https://images.tldr.tech/logo.png">Logo</a>
+      <a href="https://example.com/signup?utm_source=email">Signup</a>
+      <a href="https://substackcdn.com/image/fetch/foo.png">Icon</a>
+      <a href="https://example.com/second?utm_campaign=newsletter">Second</a>
+    </body></html>
+    """
+
+    links = worker._extract_links(html_body)
+
+    assert "https://example.com/post?x=1" in links
+    assert "https://example.com/second" in links
+    assert all("images.tldr.tech" not in link for link in links)
+    assert all("substackcdn.com" not in link for link in links)
+    assert all("signup" not in link for link in links)
+
+
+def test_gmail_worker_sender_allowlist(monkeypatch) -> None:
+    monkeypatch.setenv("GMAIL_ALLOWED_SENDERS", "dan@tldrnewsletter.com,hello@example.com")
+
+    worker = GmailWorker(db_manager=None, ingest_fn=None)
+
+    assert worker._sender_allowed("TLDR <dan@tldrnewsletter.com>") is True
+    assert worker._sender_allowed("Other <other@example.net>") is False
 
 
 @pytest.mark.asyncio

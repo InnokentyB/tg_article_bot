@@ -13,7 +13,7 @@ import logging
 import os
 import re
 from typing import List, Optional, Set
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, unquote, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
 
@@ -39,6 +39,12 @@ class GmailWorker:
         self._app_password = os.getenv("GMAIL_APP_PASSWORD", "")
         self._folder = os.getenv("GMAIL_FOLDER", "INBOX")
         self._poll_seconds = int(os.getenv("GMAIL_POLL_SECONDS", "300"))
+        self._max_links_per_email = int(os.getenv("GMAIL_MAX_LINKS_PER_EMAIL", "10"))
+        self._allowed_senders = [
+            item.strip().lower()
+            for item in os.getenv("GMAIL_ALLOWED_SENDERS", "").split(",")
+            if item.strip()
+        ]
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -107,19 +113,29 @@ class GmailWorker:
             # Check if processed in DB (double check in case message ID is read twice)
             if await self._db.is_email_processed(msg_id):
                 continue
+            if self._allowed_senders and not self._sender_allowed(sender):
+                logger.info(
+                    "[GmailWorker] Skipping email from sender=%r because it is not allowlisted.",
+                    sender,
+                )
+                await self._db.mark_email_processed(msg_id, subject, sender)
+                await loop.run_in_executor(None, self._sync_mark_seen, msg_id)
+                continue
 
             links = self._extract_links(body)
             filtered_links = await self._filter_links(links)
+            selected_links = filtered_links[: self._max_links_per_email]
 
             logger.info(
-                "[GmailWorker] Processing email subject=%r, found %d total URLs, %d after filtering.",
+                "[GmailWorker] Processing email subject=%r, found %d total URLs, %d after filtering, %d selected.",
                 subject,
                 len(links),
                 len(filtered_links),
+                len(selected_links),
             )
 
             processed_any = False
-            for url in filtered_links:
+            for url in selected_links:
                 success = await self._process_url(url, subject)
                 if success:
                     processed_any = True
@@ -276,8 +292,9 @@ class GmailWorker:
             soup = BeautifulSoup(body, "html.parser")
             for a in soup.find_all("a", href=True):
                 href = a["href"].strip()
-                if href.startswith(("http://", "https://")):
-                    links.add(href)
+                normalized = self._normalize_candidate_url(href)
+                if normalized:
+                    links.add(normalized)
         except Exception:
             pass
 
@@ -286,9 +303,110 @@ class GmailWorker:
         for url in regex_urls:
             # Clean trailing punctuation
             clean_url = url.rstrip(".,;:)!]}")
-            links.add(clean_url)
+            normalized = self._normalize_candidate_url(clean_url)
+            if normalized:
+                links.add(normalized)
 
         return sorted(list(links))
+
+    def _sender_allowed(self, sender: str) -> bool:
+        sender_lower = (sender or "").lower()
+        return any(pattern in sender_lower for pattern in self._allowed_senders)
+
+    def _normalize_candidate_url(self, url: str) -> Optional[str]:
+        """Normalize a raw email URL and reject obvious non-article/service links."""
+        if not url:
+            return None
+
+        url = self._unwrap_tracking_url(url.strip())
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return None
+
+        if self._is_service_or_asset_url(parsed):
+            return None
+
+        ignored_query_prefixes = ("utm_",)
+        ignored_query_keys = {
+            "dub_id",
+            "rh_ref",
+            "sl_campaign",
+            "subscriber_id",
+        }
+        query = [
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if key.lower() not in ignored_query_keys
+            and not key.lower().startswith(ignored_query_prefixes)
+        ]
+        return urlunparse(
+            (
+                parsed.scheme,
+                parsed.netloc.lower(),
+                parsed.path,
+                "",
+                urlencode(query, doseq=True),
+                "",
+            )
+        )
+
+    def _unwrap_tracking_url(self, url: str) -> str:
+        """Resolve known newsletter redirect wrappers without making network calls."""
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        path_parts = [part for part in parsed.path.split("/") if part]
+
+        if host == "tracking.tldrnewsletter.com" and len(path_parts) >= 2:
+            if path_parts[0] == "CL0":
+                target = unquote(path_parts[1])
+                if target.startswith(("http://", "https://")):
+                    return target
+
+        return url
+
+    def _is_service_or_asset_url(self, parsed) -> bool:
+        host = parsed.netloc.lower()
+        path = unquote(parsed.path or "").lower()
+        query = unquote(parsed.query or "").lower()
+        path_and_query = f"{path}?{query}"
+
+        asset_extensions = (
+            ".avif",
+            ".bmp",
+            ".css",
+            ".gif",
+            ".ico",
+            ".jpeg",
+            ".jpg",
+            ".js",
+            ".png",
+            ".svg",
+            ".webp",
+            ".woff",
+            ".woff2",
+        )
+        if path.endswith(asset_extensions):
+            return True
+
+        blocked_hosts = {
+            "data.x.ai",
+            "images.tldr.tech",
+            "substackcdn.com",
+        }
+        if host in blocked_hosts or host.startswith("images."):
+            return True
+
+        service_markers = (
+            "unsubscribe",
+            "optout",
+            "preferences",
+            "privacy-policy",
+            "/manage",
+            "/signup",
+            "referralhub",
+            "advertise.tldr.tech",
+        )
+        return any(marker in path_and_query or marker in host for marker in service_markers)
 
     # ------------------------------------------------------------------
     # Filtering & Auto-Learning
