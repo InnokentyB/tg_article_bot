@@ -78,10 +78,10 @@ async def test_gmail_worker_link_extraction() -> None:
     assert "https://medium.com/blog-post" in links
 
     # 2. Plain text body test
-    text_body = "Hello! Read TLDR at https://tldr.tech/newsletter and search on https://google.com?q=agent"
+    text_body = "Hello! Read this article at https://example.com/blog/agent-systems and search on https://google.com?q=agent"
     links_text = worker._extract_links(text_body)
-    assert "https://tldr.tech/newsletter" in links_text
-    assert "https://google.com?q=agent" in links_text
+    assert "https://example.com/blog/agent-systems" in links_text
+    assert "https://google.com?q=agent" not in links_text
 
 
 @pytest.mark.asyncio
@@ -116,6 +116,48 @@ def test_gmail_worker_sender_allowlist(monkeypatch) -> None:
 
     assert worker._sender_allowed("TLDR <dan@tldrnewsletter.com>") is True
     assert worker._sender_allowed("Other <other@example.net>") is False
+
+
+def test_gmail_worker_scores_article_candidates_above_newsletter_chrome() -> None:
+    worker = GmailWorker(db_manager=None, ingest_fn=None)
+
+    html_body = """
+    <html><body>
+      <a href="https://tracking.tldrnewsletter.com/CL0/https:%2F%2Fa.tldrnewsletter.com%2Fweb-version%3Fep=1%26utm_source=tldr/1/token">View in browser</a>
+      <a href="https://tracking.tldrnewsletter.com/CL0/https:%2F%2Fadvertise.tldr.tech%2F%3Futm_source=tldr/1/token">Advertise</a>
+      <a href="https://tracking.tldrnewsletter.com/CL0/https:%2F%2F9to5mac.com%2F2026%2F07%2F13%2Fios-27-public-beta%2F%3Futm_source=tldrnewsletter/1/token">Read the full article</a>
+      <a href="https://tracking.tldrnewsletter.com/CL0/https:%2F%2Fantirez.com%2Fnews%2F169%3Futm_source=tldrnewsletter/1/token">Control the ideas, not the code</a>
+      <a href="https://tracking.tldrnewsletter.com/CL0/https:%2F%2Fget-inscribe.com%2Fblog%2Fapple-speech-api-benchmark.html%3Futm_source=tldrnewsletter/1/token">Apple Speech API Benchmark</a>
+    </body></html>
+    """
+
+    links = worker._extract_links(html_body)
+
+    assert "https://a.tldrnewsletter.com/web-version?ep=1" not in links
+    assert "https://advertise.tldr.tech/" not in links
+    assert links[:3] == [
+        "https://9to5mac.com/2026/07/13/ios-27-public-beta/",
+        "https://antirez.com/news/169",
+        "https://get-inscribe.com/blog/apple-speech-api-benchmark.html",
+    ]
+
+
+def test_gmail_worker_rejects_common_promo_candidates() -> None:
+    worker = GmailWorker(db_manager=None, ingest_fn=None)
+
+    html_body = """
+    <html><body>
+      <a href="https://blog.productmanagementsociety.com/r/08346510?m=abc">What Can Product Managers Expect in 2027? How to Stay Ahead</a>
+      <a href="https://blog.productmanagementsociety.com/r/160a5aa7?m=abc">The AI workspace that works for you. | Notion</a>
+      <a href="https://blog.productmanagementsociety.com/r/1629ac7b?m=abc">#1 Product Manager's Hub | Product Management Society</a>
+    </body></html>
+    """
+
+    links = worker._extract_links(html_body)
+
+    assert "https://blog.productmanagementsociety.com/r/08346510?m=abc" in links
+    assert "https://blog.productmanagementsociety.com/r/160a5aa7?m=abc" not in links
+    assert "https://blog.productmanagementsociety.com/r/1629ac7b?m=abc" not in links
 
 
 @pytest.mark.asyncio

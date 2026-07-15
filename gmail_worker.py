@@ -12,12 +12,21 @@ import imaplib
 import logging
 import os
 import re
+from dataclasses import dataclass
 from typing import List, Optional, Set
 from urllib.parse import parse_qsl, urlencode, unquote, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class EmailLinkCandidate:
+    url: str
+    anchor_text: str = ""
+    score: int = 0
+    reason: str = ""
 
 
 class GmailWorker:
@@ -124,7 +133,7 @@ class GmailWorker:
 
             links = self._extract_links(body)
             filtered_links = await self._filter_links(links)
-            selected_links = filtered_links[: self._max_links_per_email]
+            selected_links = self._rank_links(filtered_links)[: self._max_links_per_email]
 
             logger.info(
                 "[GmailWorker] Processing email subject=%r, found %d total URLs, %d after filtering, %d selected.",
@@ -281,9 +290,9 @@ class GmailWorker:
 
         return html_part if html_part else text_part
 
-    def _extract_links(self, body: str) -> List[str]:
+    def _extract_link_candidates(self, body: str) -> List[EmailLinkCandidate]:
         """Parse all http/https URLs out of HTML or plaintext email body."""
-        links: Set[str] = set()
+        candidates_by_url: dict[str, EmailLinkCandidate] = {}
         if not body:
             return []
 
@@ -294,7 +303,15 @@ class GmailWorker:
                 href = a["href"].strip()
                 normalized = self._normalize_candidate_url(href)
                 if normalized:
-                    links.add(normalized)
+                    anchor_text = " ".join(a.get_text(" ", strip=True).split())
+                    candidate = EmailLinkCandidate(
+                        url=normalized,
+                        anchor_text=anchor_text,
+                    )
+                    candidates_by_url[normalized] = self._prefer_candidate(
+                        candidates_by_url.get(normalized),
+                        candidate,
+                    )
         except Exception:
             pass
 
@@ -305,9 +322,173 @@ class GmailWorker:
             clean_url = url.rstrip(".,;:)!]}")
             normalized = self._normalize_candidate_url(clean_url)
             if normalized:
-                links.add(normalized)
+                candidate = EmailLinkCandidate(url=normalized)
+                candidates_by_url[normalized] = self._prefer_candidate(
+                    candidates_by_url.get(normalized),
+                    candidate,
+                )
 
-        return sorted(list(links))
+        return self._score_candidates(list(candidates_by_url.values()))
+
+    def _extract_links(self, body: str) -> List[str]:
+        """Parse and rank candidate article URLs from email body."""
+        return [candidate.url for candidate in self._extract_link_candidates(body)]
+
+    def _prefer_candidate(
+        self,
+        current: Optional[EmailLinkCandidate],
+        candidate: EmailLinkCandidate,
+    ) -> EmailLinkCandidate:
+        if current is None:
+            return candidate
+        if len(candidate.anchor_text) > len(current.anchor_text):
+            return candidate
+        return current
+
+    def _score_candidates(self, candidates: List[EmailLinkCandidate]) -> List[EmailLinkCandidate]:
+        scored = []
+        for candidate in candidates:
+            score, reason = self._score_candidate(candidate.url, candidate.anchor_text)
+            if score <= 0:
+                continue
+            scored.append(
+                EmailLinkCandidate(
+                    url=candidate.url,
+                    anchor_text=candidate.anchor_text,
+                    score=score,
+                    reason=reason,
+                )
+            )
+        scored.sort(key=lambda item: (-item.score, item.url))
+        return scored
+
+    def _rank_links(self, links: List[str]) -> List[str]:
+        candidates = [
+            EmailLinkCandidate(url=url)
+            for url in links
+        ]
+        return [candidate.url for candidate in self._score_candidates(candidates)]
+
+    def _score_candidate(self, url: str, anchor_text: str = "") -> tuple[int, str]:
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        path = unquote(parsed.path or "").lower()
+        query = unquote(parsed.query or "").lower()
+        anchor = (anchor_text or "").lower()
+        path_parts = [part for part in path.strip("/").split("/") if part]
+
+        score = 50
+        reasons = ["base"]
+
+        # Homepage and newsletter chrome are usually not article candidates.
+        if not path_parts:
+            return 0, "homepage"
+        if len(path_parts) == 1 and path_parts[0] in {
+            "newsletter",
+            "newsletters",
+            "blog",
+            "posts",
+            "articles",
+            "r",
+        }:
+            return 0, "listing-page"
+
+        hard_negative_markers = (
+            "advertise",
+            "career",
+            "careers",
+            "demo",
+            "event",
+            "events",
+            "jobs",
+            "login",
+            "partner",
+            "pricing",
+            "product",
+            "register",
+            "sponsor",
+            "subscribe",
+            "trial",
+            "web-version",
+            "web_version",
+            "webversion",
+        )
+        if any(marker in path or marker in query for marker in hard_negative_markers):
+            return 0, "service-or-promo"
+
+        if any(marker in anchor for marker in ("advertise", "sponsor", "subscribe", "view in browser")):
+            return 0, "service-anchor"
+
+        positive_path_markers = (
+            "/20",
+            "/article",
+            "/articles",
+            "/blog/",
+            "/news/",
+            "/p/",
+            "/post",
+            "/posts",
+            "/stories/",
+        )
+        if any(marker in path for marker in positive_path_markers):
+            score += 30
+            reasons.append("article-path")
+
+        positive_anchor_markers = (
+            "article",
+            "read",
+            "story",
+            "post",
+            "guide",
+            "analysis",
+            "deep dive",
+            "исслед",
+            "статья",
+            "читать",
+            "разбор",
+        )
+        if any(marker in anchor for marker in positive_anchor_markers):
+            score += 20
+            reasons.append("article-anchor")
+
+        if re.search(r"/20\d{2}/\d{2}/\d{2}/", path) or re.search(r"/20\d{2}/", path):
+            score += 15
+            reasons.append("dated-path")
+
+        shallow_hosts = {
+            "a.tldrnewsletter.com",
+            "blog.productmanagementsociety.com",
+            "newsletter.productuniversity.ru",
+        }
+        if host in shallow_hosts and len(path_parts) <= 2:
+            score -= 25
+            reasons.append("newsletter-wrapper")
+
+        promo_anchor_markers = (
+            "ai workspace",
+            "course",
+            "free trial",
+            "hub",
+            "newsletter",
+            "product manager's hub",
+            "webinar",
+            "workspace",
+        )
+        if any(marker in anchor for marker in promo_anchor_markers):
+            score -= 35
+            reasons.append("promo-anchor")
+
+        promo_title_path_markers = (
+            "notion",
+            "hub",
+            "newsletter",
+            "voice",
+        )
+        if len(path_parts) <= 2 and any(marker in path for marker in promo_title_path_markers):
+            score -= 20
+            reasons.append("promo-path")
+
+        return score, ",".join(reasons)
 
     def _sender_allowed(self, sender: str) -> bool:
         sender_lower = (sender or "").lower()
