@@ -6,6 +6,7 @@ extracts links to articles, filters them using dynamic database rules,
 and drives the ingestion pipeline. Marks processed emails as seen.
 """
 import asyncio
+import base64
 import email
 from email.header import decode_header
 import imaplib
@@ -397,24 +398,38 @@ class GmailWorker:
             "advertise",
             "career",
             "careers",
+            "course",
             "demo",
             "event",
             "events",
             "jobs",
+            "landing",
             "login",
             "partner",
             "pricing",
             "product",
+            "profile",
             "register",
             "sponsor",
             "subscribe",
+            "thumbnail",
             "trial",
+            "webinar",
             "web-version",
             "web_version",
             "webversion",
         )
         if any(marker in path or marker in query for marker in hard_negative_markers):
             return 0, "service-or-promo"
+
+        if host in {"x.com", "twitter.com"}:
+            return 0, "social-profile"
+
+        if host == "www.producthunt.com" and path.startswith(("/categories/", "/products/")):
+            return 0, "producthunt-directory-or-product"
+
+        if "list-manage.com" in host and ("profile" in path or "webinar" in anchor):
+            return 0, "mailchimp-service-or-webinar"
 
         if any(marker in anchor for marker in ("advertise", "sponsor", "subscribe", "view in browser")):
             return 0, "service-anchor"
@@ -469,6 +484,7 @@ class GmailWorker:
             "course",
             "free trial",
             "hub",
+            "landing",
             "newsletter",
             "product manager's hub",
             "webinar",
@@ -543,7 +559,31 @@ class GmailWorker:
                 if target.startswith(("http://", "https://")):
                     return target
 
+        if host == "s-links.producthunt.com" and path_parts:
+            target = self._decode_base64_url_token(path_parts[-1])
+            if target:
+                return target
+
+        if host.endswith(".click.convertkit-mail4.com") and path_parts:
+            target = self._decode_base64_url_token(path_parts[-1])
+            if target:
+                return target
+
         return url
+
+    def _decode_base64_url_token(self, token: str) -> Optional[str]:
+        token = unquote(token).split("?", 1)[0]
+        padded_token = token + "=" * (-len(token) % 4)
+        try:
+            decoded = base64.urlsafe_b64decode(padded_token.encode("ascii")).decode(
+                "utf-8",
+                errors="ignore",
+            )
+        except Exception:
+            return None
+        if decoded.startswith(("http://", "https://")):
+            return decoded
+        return None
 
     def _is_service_or_asset_url(self, parsed) -> bool:
         host = parsed.netloc.lower()
@@ -566,7 +606,7 @@ class GmailWorker:
             ".woff",
             ".woff2",
         )
-        if path.endswith(asset_extensions):
+        if path.endswith(asset_extensions) or any(f"{ext}/" in path for ext in asset_extensions):
             return True
 
         blocked_hosts = {
@@ -577,13 +617,37 @@ class GmailWorker:
         if host in blocked_hosts or host.startswith("images."):
             return True
 
+        blocked_host_markers = (
+            ".open.convertkit-mail",
+            "click.email.ironhack.com",
+            "fs-thb",
+            "getcourse",
+            "hubspotlinks.com",
+        )
+        if any(marker in host for marker in blocked_host_markers):
+            return True
+
+        if "list-manage.com" in host and ("/profile" in path or "profile" in query):
+            return True
+        if host == "lp.gooddata.com" and ("/e3t/" in path or "temporary-slug" in path):
+            return True
+        if host == "engage.coaching.com" and "/e3t/" in path:
+            return True
+        if host == "universuspro.ru" and path.startswith("/g/"):
+            return True
+
         service_markers = (
             "unsubscribe",
             "optout",
             "preferences",
             "privacy-policy",
+            "open.aspx",
+            "temporary-slug",
+            "thumbnail",
+            "fileservice",
             "/manage",
             "/signup",
+            "/g/",
             "referralhub",
             "advertise.tldr.tech",
         )

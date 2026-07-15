@@ -160,6 +160,67 @@ def test_gmail_worker_rejects_common_promo_candidates() -> None:
     assert "https://blog.productmanagementsociety.com/r/1629ac7b?m=abc" not in links
 
 
+def test_gmail_worker_unwraps_producthunt_and_rejects_directories() -> None:
+    worker = GmailWorker(db_manager=None, ingest_fn=None)
+
+    category_target = "aHR0cHM6Ly93d3cucHJvZHVjdGh1bnQuY29tL2NhdGVnb3JpZXMvYWktdm9pY2UtYWdlbnRzP3V0bV9zb3VyY2U9Zm9v"
+    product_target = "aHR0cHM6Ly93d3cucHJvZHVjdGh1bnQuY29tL3Byb2R1Y3RzL2Z1dG8tc3dpcGU_dXRtX3NvdXJjZT1mb28"
+    html_body = f"""
+    <html><body>
+      <a href="https://s-links.producthunt.com/lnk/foo/bar/{category_target}">AI voice agents</a>
+      <a href="https://s-links.producthunt.com/lnk/foo/bar/{product_target}">FUTO Swipe</a>
+      <a href="https://www.indiehackers.com/post/side-project-hit-1-7m-users-rC123">Read the story</a>
+    </body></html>
+    """
+
+    links = worker._extract_links(html_body)
+
+    assert "https://www.producthunt.com/categories/ai-voice-agents" not in links
+    assert "https://www.producthunt.com/products/futo-swipe" not in links
+    assert "https://www.indiehackers.com/post/side-project-hit-1-7m-users-rC123" in links
+
+
+def test_gmail_worker_unwraps_convertkit_articles_and_rejects_profiles() -> None:
+    worker = GmailWorker(db_manager=None, ingest_fn=None)
+
+    article_target = "aHR0cHM6Ly93d3cuaW5kaWVoYWNrZXJzLmNvbS9wb3N0L3NpZGUtcHJvamVjdC1oaXQtMS03bS11c2Vycy1yQzEyMz91dG1fc291cmNlPWNvbnZlcnRraXQ"
+    profile_target = "aHR0cHM6Ly94LmNvbS9jaGFubmluZ2FsbGVuP3V0bV9zb3VyY2U9Y29udmVydGtpdA"
+    html_body = f"""
+    <html><body>
+      <a href="https://indiehackers.click.convertkit-mail4.com/click/abc/{article_target}">Read the full post</a>
+      <a href="https://indiehackers.click.convertkit-mail4.com/click/abc/{profile_target}">Channing Allen</a>
+      <a href="https://indiehackers.open.convertkit-mail4.com/o/abc.gif">Open pixel</a>
+    </body></html>
+    """
+
+    links = worker._extract_links(html_body)
+
+    assert "https://www.indiehackers.com/post/side-project-hit-1-7m-users-rC123" in links
+    assert "https://x.com/channingallen" not in links
+    assert all("convertkit-mail4.com" not in link for link in links)
+
+
+def test_gmail_worker_rejects_mailchimp_getcourse_and_landing_noise() -> None:
+    worker = GmailWorker(db_manager=None, ingest_fn=None)
+
+    html_body = """
+    <html><body>
+      <a href="https://tocico.us13.list-manage.com/profile?u=abc&id=def">Update profile</a>
+      <a href="https://us.list-manage.com/track/click?u=abc&id=def">Webinar: Introduction to Theory of Constraints</a>
+      <a href="https://fs-thb02.getcourse.ru/fileservice/file/thumbnail/h/abc.png/s/x50/a/123/sc/1">Image</a>
+      <a href="https://universuspro.ru/g/neiro-start">5 простых способов заработка на нейросетях</a>
+      <a href="https://www.theguardian.com/technology/2026/jul/01/elon-musk-ai-simulation">Critical article</a>
+    </body></html>
+    """
+
+    links = worker._extract_links(html_body)
+
+    assert all("list-manage.com" not in link for link in links)
+    assert all("getcourse.ru" not in link for link in links)
+    assert all("universuspro.ru" not in link for link in links)
+    assert "https://www.theguardian.com/technology/2026/jul/01/elon-musk-ai-simulation" in links
+
+
 @pytest.mark.asyncio
 async def test_gmail_worker_filtering_and_autolearn(db: DatabaseManager) -> None:
     """Verify link filtering based on database patterns and auto-learning blocklist additions."""
