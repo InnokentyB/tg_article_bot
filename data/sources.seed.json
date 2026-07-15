@@ -1,0 +1,247 @@
+{
+  "version": 1,
+  "updated_at": "2026-07-07",
+  "policy": {
+    "active_seed_rule": "Only verified RSS/Atom sources are active by default.",
+    "discovery_rule": "Aggregators are candidates for later ranking, not default review sources.",
+    "manual_rule": "High-value sources without stable RSS should use manual URL ingestion."
+  },
+  "sources": [
+    {
+      "name": "OpenAI News",
+      "url": "https://openai.com/news/rss.xml",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 12,
+      "metadata": {
+        "tier": 1,
+        "topics": ["ai", "llm", "agents", "product"],
+        "trust_level": "primary",
+        "noise_risk": "medium",
+        "bias": "vendor",
+        "editorial_role": "primary vendor announcements and product/research positioning"
+      }
+    },
+    {
+      "name": "Google AI",
+      "url": "https://blog.google/innovation-and-ai/technology/ai/rss/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 12,
+      "metadata": {
+        "tier": 1,
+        "topics": ["ai", "llm", "research", "product"],
+        "trust_level": "primary",
+        "noise_risk": "medium",
+        "bias": "vendor",
+        "editorial_role": "Google AI announcements and ecosystem signals"
+      }
+    },
+    {
+      "name": "Google DeepMind Blog",
+      "url": "https://deepmind.google/blog/rss.xml",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 12,
+      "metadata": {
+        "tier": 1,
+        "topics": ["ai", "research", "agents", "science"],
+        "trust_level": "primary",
+        "noise_risk": "low",
+        "bias": "vendor_research",
+        "editorial_role": "frontier AI research and model capability context"
+      }
+    },
+    {
+      "name": "AWS Machine Learning Blog",
+      "url": "https://aws.amazon.com/blogs/machine-learning/feed/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 8,
+      "metadata": {
+        "tier": 1,
+        "topics": ["ai", "mlops", "enterprise", "cloud"],
+        "trust_level": "primary",
+        "noise_risk": "medium",
+        "bias": "vendor",
+        "editorial_role": "enterprise AI implementation patterns and AWS service examples"
+      }
+    },
+    {
+      "name": "GitHub Engineering",
+      "url": "https://github.blog/engineering/feed/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 8,
+      "metadata": {
+        "tier": 1,
+        "topics": ["software_engineering", "developer_tools", "ai_coding"],
+        "trust_level": "primary",
+        "noise_risk": "low",
+        "bias": "vendor",
+        "editorial_role": "developer tooling and production engineering"
+      }
+    },
+    {
+      "name": "Netflix TechBlog",
+      "url": "https://netflixtechblog.com/feed",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 12,
+      "metadata": {
+        "tier": 1,
+        "topics": ["software_architecture", "platform_engineering", "data"],
+        "trust_level": "primary",
+        "noise_risk": "low",
+        "bias": "company_engineering",
+        "editorial_role": "production architecture and platform tradeoffs"
+      }
+    },
+    {
+      "name": "Martin Fowler",
+      "url": "https://martinfowler.com/feed.atom",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["software_architecture", "engineering_practice", "enterprise"],
+        "trust_level": "expert",
+        "noise_risk": "low",
+        "bias": "independent_consulting",
+        "editorial_role": "architecture framing and conceptual critique"
+      }
+    },
+    {
+      "name": "arXiv cs.AI",
+      "url": "https://rss.arxiv.org/rss/cs.AI",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 12,
+      "metadata": {
+        "tier": 1,
+        "topics": ["ai", "research"],
+        "trust_level": "preprint",
+        "noise_risk": "high",
+        "bias": "academic_preprint",
+        "editorial_role": "early research signal; requires stronger filtering"
+      }
+    },
+    {
+      "name": "arXiv cs.LG",
+      "url": "https://rss.arxiv.org/rss/cs.LG",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 12,
+      "metadata": {
+        "tier": 1,
+        "topics": ["machine_learning", "research"],
+        "trust_level": "preprint",
+        "noise_risk": "high",
+        "bias": "academic_preprint",
+        "editorial_role": "machine learning research feed; requires ranking and dedup"
+      }
+    },
+    {
+      "name": "Habr Artificial Intelligence",
+      "url": "https://habr.com/ru/rss/hubs/artificial_intelligence/articles/all/",
+      "source_type": "rss",
+      "language": "ru",
+      "is_active": true,
+      "fetch_interval_hours": 6,
+      "metadata": {
+        "tier": 1,
+        "topics": ["ai", "ru_context"],
+        "trust_level": "community",
+        "noise_risk": "medium",
+        "bias": "mixed",
+        "editorial_role": "Russian-language AI context and practitioner posts"
+      }
+    },
+    {
+      "name": "Habr Machine Learning",
+      "url": "https://habr.com/ru/rss/hubs/machine_learning/articles/all/",
+      "source_type": "rss",
+      "language": "ru",
+      "is_active": true,
+      "fetch_interval_hours": 6,
+      "metadata": {
+        "tier": 1,
+        "topics": ["machine_learning", "ru_context"],
+        "trust_level": "community",
+        "noise_risk": "medium",
+        "bias": "mixed",
+        "editorial_role": "Russian-language ML practice and explanations"
+      }
+    },
+    {
+      "name": "Habr Programming",
+      "url": "https://habr.com/ru/rss/hubs/programming/articles/all/",
+      "source_type": "rss",
+      "language": "ru",
+      "is_active": true,
+      "fetch_interval_hours": 8,
+      "metadata": {
+        "tier": 1,
+        "topics": ["software_engineering", "programming", "ru_context"],
+        "trust_level": "community",
+        "noise_risk": "medium",
+        "bias": "mixed",
+        "editorial_role": "Russian-language software engineering context"
+      }
+    }
+  ],
+  "candidates": [
+    {
+      "name": "Anthropic News",
+      "url": "https://www.anthropic.com/news",
+      "source_type": "manual_web",
+      "language": "en",
+      "reason_not_active": "No stable RSS endpoint confirmed; /news/rss.xml returned 404.",
+      "metadata": {
+        "tier": 1,
+        "topics": ["ai", "llm", "safety", "agents"],
+        "trust_level": "primary",
+        "noise_risk": "medium",
+        "bias": "vendor"
+      }
+    },
+    {
+      "name": "Hacker News Best",
+      "url": "https://hnrss.org/best",
+      "source_type": "rss",
+      "language": "en",
+      "reason_not_active": "Discovery aggregator; should wait for stronger ranking and noise controls.",
+      "metadata": {
+        "tier": 3,
+        "topics": ["discovery", "tech_news"],
+        "trust_level": "aggregator",
+        "noise_risk": "high",
+        "bias": "community_ranking"
+      }
+    },
+    {
+      "name": "InfoQ AI / Architecture",
+      "url": "https://www.infoq.com/",
+      "source_type": "manual_web",
+      "language": "en",
+      "reason_not_active": "Category RSS URL needs verification.",
+      "metadata": {
+        "tier": 2,
+        "topics": ["ai", "software_architecture", "enterprise"],
+        "trust_level": "editorial",
+        "noise_risk": "medium",
+        "bias": "editorial"
+      }
+    }
+  ]
+}
