@@ -330,6 +330,44 @@ async def ingest_url(article_data: dict, auth: bool = Depends(verify_api_key)):
     """Ingest an article from a URL into the MVP article intelligence store."""
     return await ingest_url_payload(article_data)
 
+
+async def build_article_embeddings(article_id: int, chunks: list, model_override: Optional[str] = None) -> dict:
+    """Create or update embeddings for already stored article chunks."""
+    global db_manager
+
+    if not chunks:
+        return {"model": None, "embeddings_count": 0, "embedding_dimensions": 0}
+
+    from embedding_provider import get_embedding_provider
+
+    provider = get_embedding_provider()
+    model = model_override or provider.model
+    texts = [chunk["text"] for chunk in chunks]
+    vectors = await provider.embed_texts(texts)
+
+    if len(vectors) != len(chunks):
+        raise RuntimeError("Embedding provider returned mismatched vector count")
+
+    embedding_ids = []
+    for chunk, vector in zip(chunks, vectors):
+        embedding_id = await db_manager.upsert_article_embedding(
+            article_id=article_id,
+            chunk_id=chunk["id"],
+            model=model,
+            embedding=vector,
+        )
+        embedding_ids.append(embedding_id)
+
+    if vectors and len(vectors[0]) > 0:
+        await db_manager.ensure_vector_index(len(vectors[0]))
+
+    return {
+        "model": model,
+        "embeddings_count": len(embedding_ids),
+        "embedding_dimensions": len(vectors[0]) if vectors else 0,
+    }
+
+
 async def ingest_url_payload(article_data: dict) -> dict:
     """Shared URL ingestion logic for direct URL and RSS ingestion."""
     global db_manager
@@ -413,6 +451,7 @@ async def ingest_url_payload(article_data: dict) -> dict:
 
         chunks = ArticleChunker().chunk_text(text)
         inserted_chunks = await db_manager.replace_article_chunks(article_id, chunks)
+        embedding_result = await build_article_embeddings(article_id, inserted_chunks)
 
         return {
             "status": "created",
@@ -422,6 +461,8 @@ async def ingest_url_payload(article_data: dict) -> dict:
             "title": title,
             "text_length": len(text),
             "chunks_count": len(inserted_chunks),
+            "embeddings_count": embedding_result["embeddings_count"],
+            "embedding_model": embedding_result["model"],
             "categories": categories,
         }
 
@@ -711,36 +752,22 @@ async def rebuild_embeddings(request_data: dict, auth: bool = Depends(verify_api
             raise HTTPException(status_code=400, detail="Article has no text to embed")
         chunks = await db_manager.replace_article_chunks(int(article_id), chunk_payloads)
 
-    from embedding_provider import get_embedding_provider
-
-    provider = get_embedding_provider()
-    texts = [chunk["text"] for chunk in chunks]
-    vectors = await provider.embed_texts(texts)
-
-    if len(vectors) != len(chunks):
-        raise HTTPException(status_code=500, detail="Embedding provider returned mismatched vector count")
-
-    embedding_ids = []
-    for chunk, vector in zip(chunks, vectors):
-        embedding_id = await db_manager.upsert_article_embedding(
-            article_id=int(article_id),
-            chunk_id=chunk["id"],
-            model=request_data.get("model") or provider.model,
-            embedding=vector,
+    try:
+        embedding_result = await build_article_embeddings(
+            int(article_id),
+            chunks,
+            model_override=request_data.get("model"),
         )
-        embedding_ids.append(embedding_id)
-
-    # Idempotently ensure the vector index exists for these dimensions
-    if vectors and len(vectors[0]) > 0:
-        await db_manager.ensure_vector_index(len(vectors[0]))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return {
         "status": "rebuilt",
         "article_id": int(article_id),
-        "model": request_data.get("model") or provider.model,
+        "model": embedding_result["model"],
         "chunks_count": len(chunks),
-        "embeddings_count": len(embedding_ids),
-        "embedding_dimensions": len(vectors[0]) if vectors else 0,
+        "embeddings_count": embedding_result["embeddings_count"],
+        "embedding_dimensions": embedding_result["embedding_dimensions"],
     }
 
 

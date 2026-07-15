@@ -37,3 +37,31 @@ def test_rss_worker_start_creates_background_task(monkeypatch) -> None:
             await asyncio.sleep(0)
 
     asyncio.run(run())
+
+
+def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
+    monkeypatch.setenv("WORKER_ENABLED", "true")
+
+    class FakeDB:
+        async def get_sources(self, active_only: bool, due_for_fetch: bool) -> list[dict]:
+            assert active_only is True
+            assert due_for_fetch is True
+            return [
+                {"id": 1, "name": "Email source", "source_type": "email_link"},
+                {"id": 2, "name": "RSS source", "source_type": "rss"},
+                {"id": 3, "name": "Article source", "source_type": "rss_entry"},
+            ]
+
+    async def run() -> None:
+        worker = RSSWorker(db_manager=FakeDB(), ingest_fn=_unused_ingest_fn)
+        fetched = []
+
+        async def fake_fetch_source(source: dict) -> None:
+            fetched.append(source["id"])
+
+        worker._fetch_source = fake_fetch_source
+        await worker._poll_once()
+
+        assert fetched == [2]
+
+    asyncio.run(run())

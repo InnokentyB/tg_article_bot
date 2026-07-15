@@ -98,6 +98,18 @@ class RSSWorker:
             logger.debug("[RSSWorker] No sources due for fetch.")
             return
 
+        rss_sources = [source for source in sources if source.get("source_type") == "rss"]
+        skipped = len(sources) - len(rss_sources)
+        if skipped:
+            logger.info(
+                "[RSSWorker] Skipping %d due non-RSS source(s).",
+                skipped,
+            )
+        sources = rss_sources
+        if not sources:
+            logger.debug("[RSSWorker] No RSS sources due for fetch.")
+            return
+
         logger.info("[RSSWorker] %d source(s) due for crawl.", len(sources))
         for source in sources:
             await self._fetch_source(source)
