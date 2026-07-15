@@ -10,6 +10,7 @@ import base64
 import email
 from email.header import decode_header
 import imaplib
+import json
 import logging
 import os
 import re
@@ -402,28 +403,38 @@ class GmailWorker:
             "demo",
             "event",
             "events",
+            "conference",
             "jobs",
             "landing",
+            "linkedin",
             "login",
             "partner",
             "pricing",
+            "privacy",
             "product",
             "profile",
             "register",
             "sponsor",
             "subscribe",
             "thumbnail",
+            "ticket",
+            "tickets",
             "trial",
             "webinar",
             "web-version",
             "web_version",
             "webversion",
+            "xprize",
+            "zoom",
         )
         if any(marker in path or marker in query for marker in hard_negative_markers):
             return 0, "service-or-promo"
 
-        if host in {"x.com", "twitter.com"}:
+        if host in {"x.com", "twitter.com"} or host.endswith(".linkedin.com") or host == "linkedin.com":
             return 0, "social-profile"
+
+        if host in {"zoom.us", "devpost.com", "www.devpost.com"}:
+            return 0, "event-or-challenge"
 
         if host == "www.producthunt.com" and path.startswith(("/categories/", "/products/")):
             return 0, "producthunt-directory-or-product"
@@ -569,21 +580,35 @@ class GmailWorker:
             if target:
                 return target
 
+        if host == "e.customeriomail.com" and len(path_parts) >= 3 and path_parts[:2] == ["e", "c"]:
+            decoded = self._decode_base64_url_text(path_parts[2])
+            if decoded:
+                try:
+                    payload = json.loads(decoded)
+                except json.JSONDecodeError:
+                    payload = {}
+                target = payload.get("href")
+                if isinstance(target, str) and target.startswith(("http://", "https://")):
+                    return target
+
         return url
 
     def _decode_base64_url_token(self, token: str) -> Optional[str]:
+        decoded = self._decode_base64_url_text(token)
+        if decoded and decoded.startswith(("http://", "https://")):
+            return decoded
+        return None
+
+    def _decode_base64_url_text(self, token: str) -> Optional[str]:
         token = unquote(token).split("?", 1)[0]
         padded_token = token + "=" * (-len(token) % 4)
         try:
-            decoded = base64.urlsafe_b64decode(padded_token.encode("ascii")).decode(
+            return base64.urlsafe_b64decode(padded_token.encode("ascii")).decode(
                 "utf-8",
                 errors="ignore",
             )
         except Exception:
             return None
-        if decoded.startswith(("http://", "https://")):
-            return decoded
-        return None
 
     def _is_service_or_asset_url(self, parsed) -> bool:
         host = parsed.netloc.lower()
@@ -619,10 +644,14 @@ class GmailWorker:
 
         blocked_host_markers = (
             ".open.convertkit-mail",
+            "apify.intercom-clicks.com",
             "click.email.ironhack.com",
+            "clicks.eventbrite.com",
+            "e.customeriomail.com",
             "fs-thb",
             "getcourse",
             "hubspotlinks.com",
+            "intercom-clicks.com",
         )
         if any(marker in host for marker in blocked_host_markers):
             return True

@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import json
 import os
 import sys
 import time
@@ -219,6 +221,38 @@ def test_gmail_worker_rejects_mailchimp_getcourse_and_landing_noise() -> None:
     assert all("getcourse.ru" not in link for link in links)
     assert all("universuspro.ru" not in link for link in links)
     assert "https://www.theguardian.com/technology/2026/jul/01/elon-musk-ai-simulation" in links
+
+
+def test_gmail_worker_unwraps_customerio_and_rejects_event_social_noise() -> None:
+    worker = GmailWorker(db_manager=None, ingest_fn=None)
+
+    def customerio_link(target: str) -> str:
+        payload = json.dumps({"href": target}, separators=(",", ":")).encode()
+        token = base64.urlsafe_b64encode(payload).decode().rstrip("=")
+        return f"https://e.customeriomail.com/e/c/{token}/hash"
+
+    html_body = f"""
+    <html><body>
+      <a href="{customerio_link('https://simonwillison.net/2026/Jul/8/introducing-gptlive/?utm_source=email')}">Read the article</a>
+      <a href="{customerio_link('https://us02web.zoom.us/webinar/register/4417836187912/WN_demo')}">Webinar Registration</a>
+      <a href="{customerio_link('https://www.linkedin.com/company/devpost')}">Devpost LinkedIn</a>
+      <a href="{customerio_link('https://twitter.com/devpost')}">Devpost Twitter</a>
+      <a href="{customerio_link('https://xprize.devpost.com?utm_source=devpost')}">Build with Gemini XPRIZE</a>
+      <a href="https://clicks.eventbrite.com/f/a/opaque">Eventbrite event</a>
+      <a href="https://apify.intercom-clicks.com/via/e?ob=opaque">Intercom tracking</a>
+    </body></html>
+    """
+
+    links = worker._extract_links(html_body)
+
+    assert "https://simonwillison.net/2026/Jul/8/introducing-gptlive/" in links
+    assert all("customeriomail.com" not in link for link in links)
+    assert all("zoom.us" not in link for link in links)
+    assert all("linkedin.com" not in link for link in links)
+    assert all("twitter.com" not in link for link in links)
+    assert all("devpost.com" not in link for link in links)
+    assert all("eventbrite.com" not in link for link in links)
+    assert all("intercom-clicks.com" not in link for link in links)
 
 
 @pytest.mark.asyncio
