@@ -255,6 +255,38 @@ def test_gmail_worker_unwraps_customerio_and_rejects_event_social_noise() -> Non
     assert all("intercom-clicks.com" not in link for link in links)
 
 
+def test_gmail_worker_rejects_new_tracking_assets_and_unwraps_geteml() -> None:
+    worker = GmailWorker(db_manager=None, ingest_fn=None)
+
+    geteml_target = base64.urlsafe_b64encode(
+        "https://dtcenter.ru/tpost/kivach_clinic?utm_source=email".encode()
+    ).decode().rstrip("=")
+    html_body = f"""
+    <html><body>
+      <a href="https://media.licdn.com/dms/image/v2/D4D12AQEgVW/article-inline_image-shrink_400_744/B4/foo">LinkedIn image</a>
+      <a href="https://static.licdn.com/aero-v1/sc/h/2fp5x7ci191mxbdy1eynscn59">LinkedIn static</a>
+      <a href="https://genaiworks.typeform.com/to/uXIl0IFH">B2B form</a>
+      <a href="https://xwwdjrm.clicks.mlsend.com/ty/cl/opaque">Telegram channel</a>
+      <a href="https://email.akamai.com/NjQyLVNLTi00NDkAAAGi4QFy">Akamai tracking</a>
+      <a href="https://u42068088.ct.sendgrid.net/ls/click?upn=u001.opaque">SendGrid tracking</a>
+      <a href="https://geteml.com/ru/mail_read_tracker/5705301?hash=abc">Read pixel</a>
+      <a href="https://img.hiteml.com/en/v5/user-files?resource=himg&name=abc">Inline image</a>
+      <a href="https://geteml.com/ru/mail_link_tracker?hash=abc&url={geteml_target}&uid=1">Кейс Клиника Кивач</a>
+    </body></html>
+    """
+
+    links = worker._extract_links(html_body)
+
+    assert "https://dtcenter.ru/tpost/kivach_clinic" in links
+    assert all("licdn.com" not in link for link in links)
+    assert all("typeform.com" not in link for link in links)
+    assert all("mlsend.com" not in link for link in links)
+    assert all("akamai.com" not in link for link in links)
+    assert all("sendgrid.net" not in link for link in links)
+    assert all("geteml.com" not in link for link in links)
+    assert all("hiteml.com" not in link for link in links)
+
+
 @pytest.mark.asyncio
 async def test_gmail_worker_filtering_and_autolearn(db: DatabaseManager) -> None:
     """Verify link filtering based on database patterns and auto-learning blocklist additions."""

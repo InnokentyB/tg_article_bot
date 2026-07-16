@@ -401,6 +401,7 @@ class GmailWorker:
             "careers",
             "course",
             "demo",
+            "company-logo",
             "event",
             "events",
             "conference",
@@ -414,6 +415,7 @@ class GmailWorker:
             "product",
             "profile",
             "register",
+            "read_tracker",
             "sponsor",
             "subscribe",
             "thumbnail",
@@ -435,6 +437,9 @@ class GmailWorker:
 
         if host in {"zoom.us", "devpost.com", "www.devpost.com"}:
             return 0, "event-or-challenge"
+
+        if host.endswith(".typeform.com") or host in {"t.me", "telegram.me"}:
+            return 0, "form-or-social"
 
         if host == "www.producthunt.com" and path.startswith(("/categories/", "/products/")):
             return 0, "producthunt-directory-or-product"
@@ -591,6 +596,12 @@ class GmailWorker:
                 if isinstance(target, str) and target.startswith(("http://", "https://")):
                     return target
 
+        if host == "geteml.com" and "/mail_link_tracker" in parsed.path:
+            query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+            target = self._decode_base64_url_token(query.get("url", ""))
+            if target:
+                return target
+
         return url
 
     def _decode_base64_url_token(self, token: str) -> Optional[str]:
@@ -600,7 +611,7 @@ class GmailWorker:
         return None
 
     def _decode_base64_url_text(self, token: str) -> Optional[str]:
-        token = unquote(token).split("?", 1)[0]
+        token = unquote(token).split("?", 1)[0].replace("~", "=")
         padded_token = token + "=" * (-len(token) % 4)
         try:
             return base64.urlsafe_b64decode(padded_token.encode("ascii")).decode(
@@ -637,6 +648,8 @@ class GmailWorker:
         blocked_hosts = {
             "data.x.ai",
             "images.tldr.tech",
+            "media.licdn.com",
+            "static.licdn.com",
             "substackcdn.com",
         }
         if host in blocked_hosts or host.startswith("images."):
@@ -645,13 +658,18 @@ class GmailWorker:
         blocked_host_markers = (
             ".open.convertkit-mail",
             "apify.intercom-clicks.com",
+            "clicks.mlsend.com",
             "click.email.ironhack.com",
             "clicks.eventbrite.com",
+            "ct.sendgrid.net",
             "e.customeriomail.com",
+            "email.akamai.com",
             "fs-thb",
             "getcourse",
             "hubspotlinks.com",
+            "img.hiteml.com",
             "intercom-clicks.com",
+            "typeform.com",
         )
         if any(marker in host for marker in blocked_host_markers):
             return True
@@ -664,6 +682,8 @@ class GmailWorker:
             return True
         if host == "universuspro.ru" and path.startswith("/g/"):
             return True
+        if host == "geteml.com" and "/mail_link_tracker" not in path:
+            return True
 
         service_markers = (
             "unsubscribe",
@@ -674,6 +694,9 @@ class GmailWorker:
             "temporary-slug",
             "thumbnail",
             "fileservice",
+            "mail_read_tracker",
+            "resource=himg",
+            "series-logo",
             "/manage",
             "/signup",
             "/g/",
