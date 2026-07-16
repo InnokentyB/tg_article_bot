@@ -418,6 +418,8 @@ class GmailWorker:
             "read_tracker",
             "sponsor",
             "subscribe",
+            "template",
+            "templates",
             "thumbnail",
             "ticket",
             "tickets",
@@ -433,6 +435,9 @@ class GmailWorker:
             return 0, "service-or-promo"
 
         if host in {"x.com", "twitter.com"} or host.endswith(".linkedin.com") or host == "linkedin.com":
+            return 0, "social-profile"
+
+        if host in {"instagram.com", "www.instagram.com"}:
             return 0, "social-profile"
 
         if host in {"zoom.us", "devpost.com", "www.devpost.com"}:
@@ -585,7 +590,7 @@ class GmailWorker:
             if target:
                 return target
 
-        if host == "e.customeriomail.com" and len(path_parts) >= 3 and path_parts[:2] == ["e", "c"]:
+        if "customerio" in host and len(path_parts) >= 3 and path_parts[:2] == ["e", "c"]:
             decoded = self._decode_base64_url_text(path_parts[2])
             if decoded:
                 try:
@@ -596,7 +601,7 @@ class GmailWorker:
                 if isinstance(target, str) and target.startswith(("http://", "https://")):
                     return target
 
-        if host == "geteml.com" and "/mail_link_tracker" in parsed.path:
+        if "/mail_link_tracker" in parsed.path:
             query = dict(parse_qsl(parsed.query, keep_blank_values=True))
             target = self._decode_base64_url_token(query.get("url", ""))
             if target:
@@ -647,6 +652,8 @@ class GmailWorker:
 
         blocked_hosts = {
             "data.x.ai",
+            "fonts.googleapis.com",
+            "fonts.gstatic.com",
             "images.tldr.tech",
             "media.licdn.com",
             "static.licdn.com",

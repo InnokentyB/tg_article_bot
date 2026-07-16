@@ -229,7 +229,7 @@ def test_gmail_worker_unwraps_customerio_and_rejects_event_social_noise() -> Non
     def customerio_link(target: str) -> str:
         payload = json.dumps({"href": target}, separators=(",", ":")).encode()
         token = base64.urlsafe_b64encode(payload).decode().rstrip("=")
-        return f"https://e.customeriomail.com/e/c/{token}/hash"
+        return f"https://customerio.productschool.com/e/c/{token}/hash"
 
     html_body = f"""
     <html><body>
@@ -237,7 +237,9 @@ def test_gmail_worker_unwraps_customerio_and_rejects_event_social_noise() -> Non
       <a href="{customerio_link('https://us02web.zoom.us/webinar/register/4417836187912/WN_demo')}">Webinar Registration</a>
       <a href="{customerio_link('https://www.linkedin.com/company/devpost')}">Devpost LinkedIn</a>
       <a href="{customerio_link('https://twitter.com/devpost')}">Devpost Twitter</a>
+      <a href="{customerio_link('https://www.instagram.com/productschool/')}">Product School Instagram</a>
       <a href="{customerio_link('https://xprize.devpost.com?utm_source=devpost')}">Build with Gemini XPRIZE</a>
+      <a href="{customerio_link('https://productschool.com/resources/templates/feedback-intelligence-plugin-for-claude')}">Free plugin template</a>
       <a href="https://clicks.eventbrite.com/f/a/opaque">Eventbrite event</a>
       <a href="https://apify.intercom-clicks.com/via/e?ob=opaque">Intercom tracking</a>
     </body></html>
@@ -250,7 +252,9 @@ def test_gmail_worker_unwraps_customerio_and_rejects_event_social_noise() -> Non
     assert all("zoom.us" not in link for link in links)
     assert all("linkedin.com" not in link for link in links)
     assert all("twitter.com" not in link for link in links)
+    assert all("instagram.com" not in link for link in links)
     assert all("devpost.com" not in link for link in links)
+    assert all("productschool.com" not in link for link in links)
     assert all("eventbrite.com" not in link for link in links)
     assert all("intercom-clicks.com" not in link for link in links)
 
@@ -267,11 +271,12 @@ def test_gmail_worker_rejects_new_tracking_assets_and_unwraps_geteml() -> None:
       <a href="https://static.licdn.com/aero-v1/sc/h/2fp5x7ci191mxbdy1eynscn59">LinkedIn static</a>
       <a href="https://genaiworks.typeform.com/to/uXIl0IFH">B2B form</a>
       <a href="https://xwwdjrm.clicks.mlsend.com/ty/cl/opaque">Telegram channel</a>
+      <a href="https://fonts.googleapis.com/css2?family=Inter">Google font CSS</a>
       <a href="https://email.akamai.com/NjQyLVNLTi00NDkAAAGi4QFy">Akamai tracking</a>
       <a href="https://u42068088.ct.sendgrid.net/ls/click?upn=u001.opaque">SendGrid tracking</a>
       <a href="https://geteml.com/ru/mail_read_tracker/5705301?hash=abc">Read pixel</a>
       <a href="https://img.hiteml.com/en/v5/user-files?resource=himg&name=abc">Inline image</a>
-      <a href="https://geteml.com/ru/mail_link_tracker?hash=abc&url={geteml_target}&uid=1">Кейс Клиника Кивач</a>
+      <a href="https://uni.rootsproduct.ru/ru/mail_link_tracker?hash=abc&url={geteml_target}&uid=1">Кейс Клиника Кивач</a>
     </body></html>
     """
 
@@ -281,6 +286,7 @@ def test_gmail_worker_rejects_new_tracking_assets_and_unwraps_geteml() -> None:
     assert all("licdn.com" not in link for link in links)
     assert all("typeform.com" not in link for link in links)
     assert all("mlsend.com" not in link for link in links)
+    assert all("googleapis.com" not in link for link in links)
     assert all("akamai.com" not in link for link in links)
     assert all("sendgrid.net" not in link for link in links)
     assert all("geteml.com" not in link for link in links)
