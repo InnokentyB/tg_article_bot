@@ -200,6 +200,22 @@
       }
     },
     {
+      "name": "Habr All Articles",
+      "url": "https://habr.com/ru/rss/articles/all/",
+      "source_type": "rss",
+      "language": "ru",
+      "is_active": true,
+      "fetch_interval_hours": 6,
+      "metadata": {
+        "tier": 1,
+        "topics": ["software_engineering", "ai", "product", "ru_context"],
+        "trust_level": "community",
+        "noise_risk": "high",
+        "bias": "mixed",
+        "editorial_role": "Broad Russian-language technology feed; useful for discovery, requires ranking and dedup"
+      }
+    },
+    {
       "name": "Modern Analyst Articles",
       "url": "https://www.modernanalyst.com/Resources/Articles/tabid/115/Default.aspx",
       "source_type": "modernanalyst_html",
