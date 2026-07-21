@@ -50,6 +50,7 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
                 {"id": 1, "name": "Email source", "source_type": "email_link"},
                 {"id": 2, "name": "RSS source", "source_type": "rss"},
                 {"id": 3, "name": "Article source", "source_type": "rss_entry"},
+                {"id": 4, "name": "Modern Analyst", "source_type": "modernanalyst_html"},
             ]
 
     async def run() -> None:
@@ -62,6 +63,44 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
         worker._fetch_source = fake_fetch_source
         await worker._poll_once()
 
-        assert fetched == [2]
+        assert fetched == [2, 4]
 
     asyncio.run(run())
+
+
+def test_rss_worker_parses_modernanalyst_article_listing() -> None:
+    html = """
+    <html><body>
+      <div class="article-list">
+        <h2>
+          <a href="/Resources/Articles/tabid/115/ID/7209/Stop-Writing-User-Stories-for-AI-Agents-They-Need-Decision-Contracts.aspx">
+            Stop Writing User Stories for AI Agents: They Need Decision Contracts
+          </a>
+        </h2>
+        <p>AI agents require decision contracts with clear authority, context, and escalation rules.</p>
+        <h2>
+          <a href="https://www.modernanalyst.com/Resources/Articles/tabid/115/ID/7199/Design-to-Make-It-Hard-for-Users-to-Make-Mistakes.aspx">
+            Design to Make It Hard for Users to Make Mistakes
+          </a>
+        </h2>
+        <p>Good software design helps prevent mistakes and improves recovery.</p>
+        <a href="/Resources/News.aspx">News</a>
+        <a href="https://example.com/Resources/Articles/tabid/115/ID/1/External.aspx">External</a>
+      </div>
+    </body></html>
+    """
+
+    entries = RSSWorker._parse_modernanalyst_articles(
+        html,
+        "https://www.modernanalyst.com/Resources/Articles/tabid/115/Default.aspx",
+    )
+
+    assert [entry["title"] for entry in entries] == [
+        "Stop Writing User Stories for AI Agents: They Need Decision Contracts",
+        "Design to Make It Hard for Users to Make Mistakes",
+    ]
+    assert entries[0]["link"] == (
+        "https://www.modernanalyst.com/Resources/Articles/tabid/115/ID/7209/"
+        "Stop-Writing-User-Stories-for-AI-Agents-They-Need-Decision-Contracts.aspx"
+    )
+    assert "decision contracts" in entries[0]["fallback_text"]

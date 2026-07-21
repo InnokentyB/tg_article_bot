@@ -13,6 +13,7 @@ Configuration (environment variables):
 import asyncio
 import logging
 import os
+from urllib.parse import urljoin, urlparse
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -98,16 +99,19 @@ class RSSWorker:
             logger.debug("[RSSWorker] No sources due for fetch.")
             return
 
-        rss_sources = [source for source in sources if source.get("source_type") == "rss"]
-        skipped = len(sources) - len(rss_sources)
+        supported_source_types = {"rss", "modernanalyst_html"}
+        supported_sources = [
+            source for source in sources if source.get("source_type") in supported_source_types
+        ]
+        skipped = len(sources) - len(supported_sources)
         if skipped:
             logger.info(
-                "[RSSWorker] Skipping %d due non-RSS source(s).",
+                "[RSSWorker] Skipping %d due unsupported source(s).",
                 skipped,
             )
-        sources = rss_sources
+        sources = supported_sources
         if not sources:
-            logger.debug("[RSSWorker] No RSS sources due for fetch.")
+            logger.debug("[RSSWorker] No supported sources due for fetch.")
             return
 
         logger.info("[RSSWorker] %d source(s) due for crawl.", len(sources))
@@ -121,6 +125,7 @@ class RSSWorker:
             source: A row dict from ``get_sources()``.
         """
         source_id: int = source["id"]
+        source_type: str = source.get("source_type") or "rss"
         feed_url: str = source.get("url", "")
         source_name: str = source.get("name", feed_url)
         language: Optional[str] = source.get("language")
@@ -129,6 +134,10 @@ class RSSWorker:
             logger.warning(
                 "[RSSWorker] source_id=%d has no URL — skipping.", source_id
             )
+            return
+
+        if source_type == "modernanalyst_html":
+            await self._fetch_modernanalyst_source(source)
             return
 
         logger.info(
@@ -236,6 +245,151 @@ class RSSWorker:
             duplicates,
             errors,
         )
+
+    async def _fetch_modernanalyst_source(self, source: dict) -> None:
+        """Crawl Modern Analyst article listings that do not expose stable RSS XML."""
+        source_id: int = source["id"]
+        listing_url: str = source.get("url", "")
+        source_name: str = source.get("name", listing_url)
+        language: Optional[str] = source.get("language")
+
+        logger.info(
+            "[RSSWorker] Crawling Modern Analyst source_id=%d name=%r url=%s",
+            source_id,
+            source_name,
+            listing_url,
+        )
+
+        try:
+            html = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._fetch_html,
+                listing_url,
+            )
+            entries = self._parse_modernanalyst_articles(html, listing_url)[: self._fetch_limit]
+        except Exception as exc:
+            logger.error(
+                "[RSSWorker] source_id=%d failed to parse Modern Analyst listing %s: %s",
+                source_id,
+                listing_url,
+                exc,
+            )
+            return
+
+        created = duplicates = errors = 0
+        for entry in entries:
+            try:
+                result = await self._ingest_fn(
+                    {
+                        "url": entry["link"],
+                        "title": entry.get("title"),
+                        "source_name": source_name,
+                        "source_type": "web",
+                        "language": language,
+                        "summary": entry.get("summary"),
+                        "fallback_text": entry.get("fallback_text"),
+                        "ingestion_method": "modernanalyst_html_worker",
+                    }
+                )
+                status = result.get("status", "unknown")
+                if status == "created":
+                    created += 1
+                elif status == "duplicate":
+                    duplicates += 1
+                else:
+                    errors += 1
+            except Exception as exc:
+                logger.error(
+                    "[RSSWorker] source_id=%d Modern Analyst entry %s ingestion failed: %s",
+                    source_id,
+                    entry.get("link"),
+                    exc,
+                )
+                errors += 1
+
+        try:
+            await self._db.update_source_last_fetched(source_id)
+        except Exception as exc:
+            logger.error(
+                "[RSSWorker] source_id=%d failed to update last_fetched_at: %s",
+                source_id,
+                exc,
+            )
+
+        logger.info(
+            "[RSSWorker] Modern Analyst source_id=%d done: created=%d duplicates=%d errors=%d",
+            source_id,
+            created,
+            duplicates,
+            errors,
+        )
+
+    @staticmethod
+    def _fetch_html(url: str) -> str:
+        import requests
+
+        response = requests.get(
+            url,
+            timeout=30,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (compatible; TGArticlesBot/1.0; "
+                    "+https://github.com/InnokentyB/tg_article_bot)"
+                ),
+                "Accept": "text/html,application/xhtml+xml",
+            },
+        )
+        response.raise_for_status()
+        return response.text
+
+    @classmethod
+    def _parse_modernanalyst_articles(cls, html: str, listing_url: str) -> list[dict]:
+        """Extract article candidates from Modern Analyst article listing HTML."""
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html or "", "html.parser")
+        entries_by_url: dict[str, dict] = {}
+
+        for anchor in soup.find_all("a", href=True):
+            href = anchor["href"]
+            title = cls._strip_html(anchor.get_text(" ", strip=True))
+            if not title:
+                continue
+
+            absolute_url = urljoin(listing_url, href)
+            parsed = urlparse(absolute_url)
+            if parsed.netloc.lower() not in {"www.modernanalyst.com", "modernanalyst.com"}:
+                continue
+            if "/Resources/Articles/" not in parsed.path or "/ID/" not in parsed.path:
+                continue
+            if absolute_url in entries_by_url:
+                continue
+
+            summary = cls._find_nearby_summary(anchor)
+            entries_by_url[absolute_url] = {
+                "title": title,
+                "link": absolute_url,
+                "summary": summary,
+                "fallback_text": "\n\n".join(part for part in (title, summary) if part),
+            }
+
+        return list(entries_by_url.values())
+
+    @staticmethod
+    def _find_nearby_summary(anchor) -> Optional[str]:
+        container = anchor
+        for _ in range(4):
+            container = container.parent
+            if container is None:
+                return None
+            text = RSSWorker._strip_html(container.get_text(" ", strip=True))
+            if not text:
+                continue
+            title = RSSWorker._strip_html(anchor.get_text(" ", strip=True)) or ""
+            if len(text) > len(title) + 40:
+                summary = text.replace(title, "", 1).strip()
+                return summary[:600] if summary else None
+        return None
 
     @staticmethod
     def _strip_html(text: str) -> Optional[str]:

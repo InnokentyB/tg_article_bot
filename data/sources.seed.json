@@ -198,6 +198,22 @@
         "bias": "mixed",
         "editorial_role": "Russian-language software engineering context"
       }
+    },
+    {
+      "name": "Modern Analyst Articles",
+      "url": "https://www.modernanalyst.com/Resources/Articles/tabid/115/Default.aspx",
+      "source_type": "modernanalyst_html",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "requirements", "product", "process"],
+        "trust_level": "expert_community",
+        "noise_risk": "medium",
+        "bias": "professional_community",
+        "editorial_role": "business analysis, requirements, process, UX, and product practice articles"
+      }
     }
   ],
   "candidates": [

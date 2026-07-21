@@ -118,6 +118,15 @@ INSERT INTO sources (
     8,
     TRUE,
     '{"tier": 1, "topics": ["software_engineering", "programming", "ru_context"], "trust_level": "community", "noise_risk": "medium", "bias": "mixed", "editorial_role": "Russian-language software engineering context"}'
+  ),
+  (
+    'Modern Analyst Articles',
+    'https://www.modernanalyst.com/Resources/Articles/tabid/115/Default.aspx',
+    'modernanalyst_html',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["business_analysis", "requirements", "product", "process"], "trust_level": "expert_community", "noise_risk": "medium", "bias": "professional_community", "editorial_role": "business analysis, requirements, process, UX, and product practice articles"}'
   )
 ON CONFLICT (url) DO UPDATE SET
     name = EXCLUDED.name,
