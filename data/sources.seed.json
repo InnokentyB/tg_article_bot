@@ -214,6 +214,22 @@
         "bias": "professional_community",
         "editorial_role": "business analysis, requirements, process, UX, and product practice articles"
       }
+    },
+    {
+      "name": "Modern Analyst News",
+      "url": "https://www.modernanalyst.com/Resources/News.aspx",
+      "source_type": "modernanalyst_html",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "requirements", "vendor_news", "tools"],
+        "trust_level": "industry_news",
+        "noise_risk": "medium",
+        "bias": "vendor_press",
+        "editorial_role": "business analysis vendor, requirements management, tooling, and industry announcements"
+      }
     }
   ],
   "candidates": [

@@ -84,6 +84,11 @@ def test_rss_worker_parses_modernanalyst_article_listing() -> None:
           </a>
         </h2>
         <p>Good software design helps prevent mistakes and improves recovery.</p>
+        <h2>
+          <a href="/Resources/News/tabid/177/ID/7200/Modern-Requirements-Ships-Its-Biggest-Update-Modern-Requirements4DevOps-NextGen.aspx">
+            Modern Requirements Ships Its Biggest Update: Modern Requirements4DevOps NextGen
+          </a>
+        </h2>
         <a href="/Resources/News.aspx">News</a>
         <a href="https://example.com/Resources/Articles/tabid/115/ID/1/External.aspx">External</a>
       </div>
@@ -98,6 +103,7 @@ def test_rss_worker_parses_modernanalyst_article_listing() -> None:
     assert [entry["title"] for entry in entries] == [
         "Stop Writing User Stories for AI Agents: They Need Decision Contracts",
         "Design to Make It Hard for Users to Make Mistakes",
+        "Modern Requirements Ships Its Biggest Update: Modern Requirements4DevOps NextGen",
     ]
     assert entries[0]["link"] == (
         "https://www.modernanalyst.com/Resources/Articles/tabid/115/ID/7209/"

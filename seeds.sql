@@ -127,6 +127,15 @@ INSERT INTO sources (
     24,
     TRUE,
     '{"tier": 1, "topics": ["business_analysis", "requirements", "product", "process"], "trust_level": "expert_community", "noise_risk": "medium", "bias": "professional_community", "editorial_role": "business analysis, requirements, process, UX, and product practice articles"}'
+  ),
+  (
+    'Modern Analyst News',
+    'https://www.modernanalyst.com/Resources/News.aspx',
+    'modernanalyst_html',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["business_analysis", "requirements", "vendor_news", "tools"], "trust_level": "industry_news", "noise_risk": "medium", "bias": "vendor_press", "editorial_role": "business analysis vendor, requirements management, tooling, and industry announcements"}'
   )
 ON CONFLICT (url) DO UPDATE SET
     name = EXCLUDED.name,

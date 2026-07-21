@@ -360,7 +360,11 @@ class RSSWorker:
             parsed = urlparse(absolute_url)
             if parsed.netloc.lower() not in {"www.modernanalyst.com", "modernanalyst.com"}:
                 continue
-            if "/Resources/Articles/" not in parsed.path or "/ID/" not in parsed.path:
+            is_supported_modernanalyst_path = (
+                "/Resources/Articles/" in parsed.path
+                or "/Resources/News/" in parsed.path
+            )
+            if not is_supported_modernanalyst_path or "/ID/" not in parsed.path:
                 continue
             if absolute_url in entries_by_url:
                 continue
