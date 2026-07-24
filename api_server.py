@@ -23,6 +23,7 @@ rss_worker = None
 gmail_worker = None
 daily_digest_worker = None
 weekly_digest_worker = None
+source_metrics_worker = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -74,7 +75,7 @@ async def lifespan(app: FastAPI):
         db_manager = None
 
     # Start background RSS worker (only when DB is available)
-    global rss_worker, gmail_worker, daily_digest_worker, weekly_digest_worker
+    global rss_worker, gmail_worker, daily_digest_worker, weekly_digest_worker, source_metrics_worker
     if db_manager:
         try:
             from rss_worker import RSSWorker
@@ -112,6 +113,15 @@ async def lifespan(app: FastAPI):
             logger.warning(f"⚠️ Weekly digest worker failed to start: {weekly_digest_err}")
             weekly_digest_worker = None
 
+        try:
+            from source_metrics_worker import SourceMetricsWorker
+            source_metrics_worker = SourceMetricsWorker(db_manager)
+            source_metrics_worker.start()
+            logger.info("✅ Source metrics worker configured")
+        except Exception as source_metrics_err:
+            logger.warning(f"⚠️ Source metrics worker failed to start: {source_metrics_err}")
+            source_metrics_worker = None
+
     yield
 
     # Shutdown
@@ -128,6 +138,9 @@ async def lifespan(app: FastAPI):
     if weekly_digest_worker:
         weekly_digest_worker.stop()
         logger.info("Weekly digest worker stopped")
+    if source_metrics_worker:
+        source_metrics_worker.stop()
+        logger.info("Source metrics worker stopped")
     if db_manager:
         await db_manager.close()
         logger.info("Database connection closed")
@@ -472,6 +485,12 @@ async def ingest_url_payload(article_data: dict) -> dict:
                 "ingestion_method": article_data.get("ingestion_method", "url"),
                 "extraction_fallback": bool(fallback_text and not extracted.get("text")),
             },
+        )
+        await db_manager.register_article_source_tracking(
+            article_id=article_id,
+            source_url=url,
+            check_after_days=int(os.getenv("SOURCE_METRICS_INITIAL_CHECK_DAYS", "7")),
+            metadata={"registered_by": "url_ingestion"},
         )
         await db_manager.update_article_categories(article_id, categories)
 
@@ -1078,6 +1097,60 @@ async def run_weekly_digest_job(request_data: dict, auth: bool = Depends(verify_
 
     job = WeeklyThematicDigestJob(db_manager, config=config)
     return await job.run(dry_run=dry_run, publish=publish)
+
+
+@app.post("/jobs/source-metrics/register")
+async def register_source_metrics_job(request_data: dict, auth: bool = Depends(verify_api_key)):
+    """Register existing article source URLs for later engagement checks."""
+    global db_manager
+
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    limit = max(1, min(int(request_data.get("limit") or 500), 5000))
+    check_after_days = max(1, min(int(request_data.get("check_after_days") or 7), 30))
+
+    articles = await db_manager.get_articles_missing_source_tracking(limit=limit)
+    registered = skipped = 0
+    for article in articles:
+        tracking_id = await db_manager.register_article_source_tracking(
+            article_id=article["article_id"],
+            source_url=article.get("source_url"),
+            check_after_days=check_after_days,
+            metadata={"registered_by": "source_metrics_register_job"},
+        )
+        if tracking_id:
+            registered += 1
+        else:
+            skipped += 1
+
+    return {
+        "status": "completed",
+        "candidates": len(articles),
+        "registered": registered,
+        "skipped": skipped,
+        "check_after_days": check_after_days,
+    }
+
+
+@app.post("/jobs/source-metrics/update")
+async def update_source_metrics_job(request_data: dict, auth: bool = Depends(verify_api_key)):
+    """Refresh due external source metrics and store snapshots."""
+    global db_manager
+
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    from external_source_tracker import ExternalSourceTracker
+
+    limit = max(1, min(int(request_data.get("limit") or 50), 500))
+    tracker = ExternalSourceTracker(db_manager)
+    await tracker.initialize()
+    try:
+        result = await tracker.update_all_tracked_articles(limit=limit)
+    finally:
+        await tracker.close()
+    return {"status": "completed", **result}
 
 
 @app.post("/articles")

@@ -7,7 +7,8 @@ import json
 import logging
 from typing import Any, List, Dict, Optional, Tuple
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -446,6 +447,217 @@ class DatabaseManager:
                 popularity_score,
                 json.dumps(metadata or {}),
             )
+
+    async def register_article_source_tracking(
+        self,
+        article_id: int,
+        source_url: Optional[str],
+        source_type: Optional[str] = None,
+        check_after_days: int = 7,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[int]:
+        """Store a direct source URL so engagement can be checked later."""
+        if not source_url:
+            return None
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+
+        normalized_url = source_url.strip()
+        detected_type = source_type or self.detect_source_type(normalized_url)
+        if not detected_type:
+            return None
+
+        next_check_at = datetime.utcnow() + timedelta(days=max(1, check_after_days))
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    """UPDATE articles
+                       SET direct_source_url = COALESCE(direct_source_url, $2),
+                           metadata = metadata || $3::jsonb,
+                           updated_at = CURRENT_TIMESTAMP
+                       WHERE id = $1""",
+                    article_id,
+                    normalized_url,
+                    json.dumps({"direct_source_url": normalized_url}),
+                )
+                return await conn.fetchval(
+                    """INSERT INTO external_source_stats
+                       (article_id, source_type, source_url, tracking_status, next_check_at, metadata)
+                       VALUES ($1, $2, $3, 'pending', $4, $5::jsonb)
+                       ON CONFLICT (article_id, source_type) DO UPDATE SET
+                           source_url = EXCLUDED.source_url,
+                           next_check_at = COALESCE(external_source_stats.next_check_at, EXCLUDED.next_check_at),
+                           metadata = external_source_stats.metadata || EXCLUDED.metadata,
+                           updated_at = CURRENT_TIMESTAMP
+                       RETURNING id""",
+                    article_id,
+                    detected_type,
+                    normalized_url,
+                    next_check_at,
+                    json.dumps(metadata or {}),
+                )
+
+    @staticmethod
+    def detect_source_type(url: str) -> Optional[str]:
+        """Return a stable source type for metric tracking."""
+        hostname = (urlparse(url).hostname or "").lower()
+        if hostname.startswith("www."):
+            hostname = hostname[4:]
+        if hostname.endswith("habr.com"):
+            return "habr"
+        if hostname.endswith("medium.com"):
+            return "medium"
+        if hostname.endswith("dev.to"):
+            return "dev"
+        if hostname:
+            return hostname.replace(".", "_")
+        return None
+
+    async def get_due_external_source_stats(self, limit: int = 50) -> List[Dict]:
+        """Return external source records due for metric refresh."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT article_id, source_type, source_url
+                   FROM external_source_stats
+                   WHERE next_check_at <= CURRENT_TIMESTAMP
+                     AND tracking_status IN ('pending', 'active', 'failed', 'unsupported')
+                   ORDER BY next_check_at ASC
+                   LIMIT $1""",
+                limit,
+            )
+            return [dict(row) for row in rows]
+
+    async def get_articles_missing_source_tracking(self, limit: int = 500) -> List[Dict]:
+        """Return articles with direct URLs that are not tracked yet."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT a.id AS article_id,
+                          COALESCE(a.direct_source_url, a.canonical_url, a.original_link) AS source_url
+                   FROM articles a
+                   WHERE COALESCE(a.direct_source_url, a.canonical_url, a.original_link) IS NOT NULL
+                     AND NOT EXISTS (
+                         SELECT 1
+                         FROM external_source_stats ess
+                         WHERE ess.article_id = a.id
+                     )
+                   ORDER BY a.created_at DESC
+                   LIMIT $1""",
+                limit,
+            )
+            return [dict(row) for row in rows]
+
+    async def save_external_source_stats(
+        self,
+        article_id: int,
+        source_type: str,
+        source_url: str,
+        stats: Dict[str, Any],
+        status: str = "active",
+        next_check_days: int = 7,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Persist latest external stats and a historical snapshot."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+
+        views_count = int(stats.get("views_count") or 0)
+        comments_count = int(stats.get("comments_count") or 0)
+        likes_count = int(stats.get("likes_count") or 0)
+        bookmarks_count = int(stats.get("bookmarks_count") or 0)
+        next_check_at = datetime.utcnow() + timedelta(days=max(1, next_check_days))
+
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                previous = await conn.fetchrow(
+                    """SELECT views_count, external_comments_count, external_likes_count, external_bookmarks_count
+                       FROM external_source_stats
+                       WHERE article_id = $1 AND source_type = $2""",
+                    article_id,
+                    source_type,
+                )
+                delta = {}
+                if previous:
+                    delta = {
+                        "views": views_count - int(previous["views_count"] or 0),
+                        "comments": comments_count - int(previous["external_comments_count"] or 0),
+                        "likes": likes_count - int(previous["external_likes_count"] or 0),
+                        "bookmarks": bookmarks_count - int(previous["external_bookmarks_count"] or 0),
+                    }
+
+                await conn.execute(
+                    """INSERT INTO external_source_stats
+                       (article_id, source_type, source_url, tracking_status, views_count,
+                        external_comments_count, external_likes_count, external_bookmarks_count,
+                        stats_delta, metadata, last_updated, next_check_at)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, CURRENT_TIMESTAMP, $11)
+                       ON CONFLICT (article_id, source_type) DO UPDATE SET
+                           source_url = EXCLUDED.source_url,
+                           tracking_status = EXCLUDED.tracking_status,
+                           views_count = EXCLUDED.views_count,
+                           external_comments_count = EXCLUDED.external_comments_count,
+                           external_likes_count = EXCLUDED.external_likes_count,
+                           external_bookmarks_count = EXCLUDED.external_bookmarks_count,
+                           stats_delta = EXCLUDED.stats_delta,
+                           metadata = external_source_stats.metadata || EXCLUDED.metadata,
+                           last_updated = CURRENT_TIMESTAMP,
+                           next_check_at = EXCLUDED.next_check_at""",
+                    article_id,
+                    source_type,
+                    source_url,
+                    status,
+                    views_count,
+                    comments_count,
+                    likes_count,
+                    bookmarks_count,
+                    json.dumps(delta),
+                    json.dumps(metadata or {}),
+                    next_check_at,
+                )
+
+                await conn.execute(
+                    """INSERT INTO external_source_stat_snapshots
+                       (article_id, source_type, source_url, views_count,
+                        external_comments_count, external_likes_count, external_bookmarks_count, metadata)
+                       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)""",
+                    article_id,
+                    source_type,
+                    source_url,
+                    views_count,
+                    comments_count,
+                    likes_count,
+                    bookmarks_count,
+                    json.dumps(metadata or {}),
+                )
+
+                popularity_score = comments_count * 3 + likes_count * 2 + bookmarks_count + views_count / 100
+                await conn.execute(
+                    """UPDATE articles
+                       SET views_count = GREATEST(COALESCE(views_count, 0), $2),
+                           comments_count = GREATEST(COALESCE(comments_count, 0), $3),
+                           likes_count = GREATEST(COALESCE(likes_count, 0), $4),
+                           popularity_score = GREATEST(COALESCE(popularity_score, 0), $5),
+                           external_stats = COALESCE(external_stats, '{}'::jsonb) || $6::jsonb,
+                           last_stats_update = CURRENT_TIMESTAMP,
+                           updated_at = CURRENT_TIMESTAMP
+                       WHERE id = $1""",
+                    article_id,
+                    views_count,
+                    comments_count,
+                    likes_count,
+                    popularity_score,
+                    json.dumps({source_type: {
+                        "url": source_url,
+                        "views": views_count,
+                        "comments": comments_count,
+                        "likes": likes_count,
+                        "bookmarks": bookmarks_count,
+                        "delta": delta,
+                    }}),
+                )
 
     async def replace_article_chunks(self, article_id: int, chunks: List[Dict[str, Any]]) -> List[Dict]:
         """Replace all chunks for an article and return inserted rows."""

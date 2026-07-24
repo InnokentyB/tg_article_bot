@@ -92,6 +92,9 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_at TIMESTAMP WITH TIME Z
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS extracted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS popularity_score DOUBLE PRECISION DEFAULT 0;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS direct_source_url TEXT;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS external_stats JSONB DEFAULT '{}'::jsonb;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS last_stats_update TIMESTAMP WITH TIME ZONE;
 ALTER TABLE articles ALTER COLUMN title DROP NOT NULL;
 
 -- Чанки статей для embedding/retrieval
@@ -174,12 +177,47 @@ CREATE TABLE IF NOT EXISTS review_sources (
     UNIQUE(review_id, article_id)
 );
 
+-- Отслеживание прямых источников: комментарии, реакции, просмотры.
+CREATE TABLE IF NOT EXISTS external_source_stats (
+    id SERIAL PRIMARY KEY,
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    source_type VARCHAR(50) NOT NULL,
+    source_url TEXT NOT NULL,
+    tracking_status VARCHAR(30) NOT NULL DEFAULT 'pending',
+    views_count INTEGER DEFAULT 0,
+    external_comments_count INTEGER DEFAULT 0,
+    external_likes_count INTEGER DEFAULT 0,
+    external_bookmarks_count INTEGER DEFAULT 0,
+    stats_delta JSONB DEFAULT '{}'::jsonb,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    first_seen_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_updated TIMESTAMP WITH TIME ZONE,
+    next_check_at TIMESTAMP WITH TIME ZONE DEFAULT NOW() + INTERVAL '7 days',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(article_id, source_type)
+);
+
+CREATE TABLE IF NOT EXISTS external_source_stat_snapshots (
+    id SERIAL PRIMARY KEY,
+    article_id INTEGER NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    source_type VARCHAR(50) NOT NULL,
+    source_url TEXT NOT NULL,
+    views_count INTEGER DEFAULT 0,
+    external_comments_count INTEGER DEFAULT 0,
+    external_likes_count INTEGER DEFAULT 0,
+    external_bookmarks_count INTEGER DEFAULT 0,
+    captured_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    metadata JSONB DEFAULT '{}'::jsonb
+);
+
 -- Создаем индексы для оптимизации
 CREATE INDEX IF NOT EXISTS idx_articles_telegram_user_id ON articles(telegram_user_id);
 CREATE INDEX IF NOT EXISTS idx_articles_source_id ON articles(source_id);
 CREATE INDEX IF NOT EXISTS idx_articles_created_at ON articles(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_published_at ON articles(published_at DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_canonical_url ON articles(canonical_url);
+CREATE INDEX IF NOT EXISTS idx_articles_direct_source_url ON articles(direct_source_url);
 CREATE INDEX IF NOT EXISTS idx_articles_language ON articles(language);
 CREATE INDEX IF NOT EXISTS idx_articles_categories ON articles USING GIN(categories_user);
 CREATE INDEX IF NOT EXISTS idx_articles_categories_auto ON articles USING GIN(categories_auto);
@@ -194,6 +232,9 @@ CREATE INDEX IF NOT EXISTS idx_article_embeddings_chunk_model ON article_embeddi
 CREATE INDEX IF NOT EXISTS idx_topic_queries_created_at ON topic_queries(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status);
 CREATE INDEX IF NOT EXISTS idx_review_sources_review_id ON review_sources(review_id);
+CREATE INDEX IF NOT EXISTS idx_external_source_stats_article_id ON external_source_stats(article_id);
+CREATE INDEX IF NOT EXISTS idx_external_source_stats_next_check ON external_source_stats(next_check_at, tracking_status);
+CREATE INDEX IF NOT EXISTS idx_external_source_snapshots_article_id ON external_source_stat_snapshots(article_id, captured_at DESC);
 
 -- Создаем полнотекстовый поиск
 CREATE INDEX IF NOT EXISTS idx_articles_title_text_fts ON articles USING GIN(
@@ -223,6 +264,10 @@ CREATE TRIGGER update_sources_updated_at BEFORE UPDATE ON sources
 
 DROP TRIGGER IF EXISTS update_reviews_updated_at ON reviews;
 CREATE TRIGGER update_reviews_updated_at BEFORE UPDATE ON reviews
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_external_source_stats_updated_at ON external_source_stats;
+CREATE TRIGGER update_external_source_stats_updated_at BEFORE UPDATE ON external_source_stats
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- Создаем представление для статистики

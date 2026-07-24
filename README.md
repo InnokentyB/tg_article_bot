@@ -85,6 +85,22 @@ curl -X POST "$API_BASE_URL/jobs/weekly-digest/run" \
   -d '{"dry_run": true, "topic": "RAG and knowledge bases", "period_days": 7, "max_articles": 7}'
 ```
 
+Регистрация прямых источников для последующей проверки комментариев/лайков:
+```bash
+curl -X POST "$API_BASE_URL/jobs/source-metrics/register" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 500, "check_after_days": 7}'
+```
+
+Ручное обновление due-метрик:
+```bash
+curl -X POST "$API_BASE_URL/jobs/source-metrics/update" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 50}'
+```
+
 ### 2. Запуск сервисов
 Для запуска базы данных, Redis и API-сервера:
 ```bash

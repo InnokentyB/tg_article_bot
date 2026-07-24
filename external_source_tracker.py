@@ -3,9 +3,7 @@ External source statistics tracker for Habr, Medium, etc.
 """
 import logging
 import re
-import json
-from typing import Dict, Optional, List
-from datetime import datetime, timedelta
+from typing import Dict, Optional
 import aiohttp
 from trafilatura import fetch_url
 from bs4 import BeautifulSoup
@@ -22,9 +20,9 @@ class ExternalSourceTracker:
         
         # Source-specific parsers
         self.source_parsers = {
-            'habr.com': self.parse_habr_stats,
-            'medium.com': self.parse_medium_stats,
-            'dev.to': self.parse_dev_stats
+            'habr': self.parse_habr_stats,
+            'medium': self.parse_medium_stats,
+            'dev': self.parse_dev_stats,
         }
     
     async def initialize(self):
@@ -46,50 +44,70 @@ class ExternalSourceTracker:
         if not self.db.pool:
             raise RuntimeError("Database pool not initialized")
         
-        # Determine source type
-        source_type = self.detect_source_type(source_url)
+        source_type = self.db.detect_source_type(source_url)
         if not source_type:
-            logger.warning(f"Unsupported source URL: {source_url}")
+            logger.warning("Cannot detect source type for URL: %s", source_url)
             return
-        
-        # Save initial tracking record
-        async with self.db.pool.acquire() as conn:
-            await conn.execute(
-                """INSERT INTO external_source_stats 
-                   (article_id, source_type, source_url, last_updated)
-                   VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-                   ON CONFLICT (article_id, source_type)
-                   DO UPDATE SET source_url = $3, last_updated = CURRENT_TIMESTAMP""",
-                article_id, source_type, source_url
+
+        await self.db.register_article_source_tracking(
+            article_id=article_id,
+            source_url=source_url,
+            source_type=source_type,
+            check_after_days=7,
+            metadata={"registered_by": "external_source_tracker"},
+        )
+
+        if source_type in self.source_parsers:
+            await self.update_source_stats(article_id, source_type, source_url)
+        else:
+            await self.db.save_external_source_stats(
+                article_id=article_id,
+                source_type=source_type,
+                source_url=source_url,
+                stats={},
+                status="unsupported",
+                next_check_days=7,
+                metadata={"reason": "no parser for this source type"},
             )
-        
-        # Fetch initial stats
-        await self.update_source_stats(article_id, source_type, source_url)
-        logger.info(f"Started tracking {source_type} for article {article_id}")
+        logger.info("Started tracking %s for article %s", source_type, article_id)
     
     def detect_source_type(self, url: str) -> Optional[str]:
         """Detect source type from URL"""
-        for domain, _ in self.source_parsers.items():
-            if domain in url.lower():
-                return domain.split('.')[0]  # 'habr', 'medium', etc.
-        return None
+        return self.db.detect_source_type(url)
     
     async def update_source_stats(self, article_id: int, source_type: str, source_url: str):
         """Update statistics for external source"""
         try:
-            parser_key = f"{source_type}.com"
-            if parser_key not in self.source_parsers:
-                logger.warning(f"No parser for source type: {source_type}")
+            if source_type not in self.source_parsers:
+                await self.db.save_external_source_stats(
+                    article_id=article_id,
+                    source_type=source_type,
+                    source_url=source_url,
+                    stats={},
+                    status="unsupported",
+                    next_check_days=7,
+                    metadata={"reason": "no parser for this source type"},
+                )
+                logger.warning("No parser for source type: %s", source_type)
                 return
             
             # Fetch and parse page
-            stats = await self.source_parsers[parser_key](source_url)
+            stats = await self.source_parsers[source_type](source_url)
             if not stats:
-                logger.warning(f"Failed to parse stats from {source_url}")
+                await self.db.save_external_source_stats(
+                    article_id=article_id,
+                    source_type=source_type,
+                    source_url=source_url,
+                    stats={},
+                    status="failed",
+                    next_check_days=7,
+                    metadata={"reason": "parser returned no stats"},
+                )
+                logger.warning("Failed to parse stats from %s", source_url)
                 return
             
             # Save to database
-            await self.save_external_stats(article_id, source_type, stats)
+            await self.save_external_stats(article_id, source_type, stats, source_url)
             logger.info(f"Updated {source_type} stats for article {article_id}: {stats}")
             
         except Exception as e:
@@ -257,34 +275,25 @@ class ExternalSourceTracker:
         except ValueError:
             return 0
     
-    async def save_external_stats(self, article_id: int, source_type: str, stats: Dict):
+    async def save_external_stats(self, article_id: int, source_type: str, stats: Dict, source_url: Optional[str] = None):
         """Save external statistics to database"""
-        if not self.db.pool:
-            raise RuntimeError("Database pool not initialized")
-        
-        async with self.db.pool.acquire() as conn:
-            await conn.execute(
-                """UPDATE external_source_stats 
-                   SET views_count = $3, external_comments_count = $4, 
-                       external_likes_count = $5, external_bookmarks_count = $6,
-                       last_updated = CURRENT_TIMESTAMP
-                   WHERE article_id = $1 AND source_type = $2""",
-                article_id, source_type,
-                stats.get('views_count', 0),
-                stats.get('comments_count', 0), 
-                stats.get('likes_count', 0),
-                stats.get('bookmarks_count', 0)
-            )
-            
-            # Also update main article stats
-            await conn.execute(
-                """UPDATE articles 
-                   SET external_stats = COALESCE(external_stats, '{}'::jsonb) || $2::jsonb,
-                       last_stats_update = CURRENT_TIMESTAMP
-                   WHERE id = $1""",
-                article_id, 
-                json.dumps({f'{source_type}_stats': stats})
-            )
+        if not source_url:
+            if not self.db.pool:
+                raise RuntimeError("Database pool not initialized")
+            async with self.db.pool.acquire() as conn:
+                source_url = await conn.fetchval(
+                    "SELECT source_url FROM external_source_stats WHERE article_id = $1 AND source_type = $2",
+                    article_id,
+                    source_type,
+                )
+        await self.db.save_external_source_stats(
+            article_id=article_id,
+            source_type=source_type,
+            source_url=source_url or "",
+            stats=stats,
+            status="active",
+            next_check_days=7,
+        )
     
     async def get_article_external_stats(self, article_id: int) -> Dict:
         """Get all external statistics for an article"""
@@ -308,28 +317,20 @@ class ExternalSourceTracker:
                     'comments': stat['external_comments_count'],
                     'likes': stat['external_likes_count'],
                     'bookmarks': stat['external_bookmarks_count'],
-                    'last_updated': stat['last_updated']
+                    'last_updated': stat['last_updated'].isoformat() if stat['last_updated'] else None
                 }
             
             return result
     
-    async def update_all_tracked_articles(self):
+    async def update_all_tracked_articles(self, limit: int = 50) -> Dict:
         """Update stats for all tracked articles (can be run periodically)"""
         if not self.db.pool:
             raise RuntimeError("Database pool not initialized")
         
-        # Get articles that need updating (older than 1 hour)
-        cutoff_time = datetime.now() - timedelta(hours=1)
-        
-        async with self.db.pool.acquire() as conn:
-            articles_to_update = await conn.fetch(
-                """SELECT article_id, source_type, source_url 
-                   FROM external_source_stats 
-                   WHERE last_updated < $1""",
-                cutoff_time
-            )
+        articles_to_update = await self.db.get_due_external_source_stats(limit=limit)
         
         logger.info(f"Updating stats for {len(articles_to_update)} articles")
+        updated = failed = 0
         
         for article_info in articles_to_update:
             try:
@@ -338,5 +339,13 @@ class ExternalSourceTracker:
                     article_info['source_type'], 
                     article_info['source_url']
                 )
+                updated += 1
             except Exception as e:
+                failed += 1
                 logger.error(f"Failed to update stats for article {article_info['article_id']}: {e}")
+
+        return {
+            "due": len(articles_to_update),
+            "updated": updated,
+            "failed": failed,
+        }
