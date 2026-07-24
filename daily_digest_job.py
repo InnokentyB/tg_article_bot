@@ -7,6 +7,7 @@ import asyncio
 import html
 import logging
 import os
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
@@ -175,7 +176,9 @@ class DailyDigestJob:
         for article in candidates:
             title = (article.get("title") or "").strip()
             title_key = " ".join(title.lower().split())
-            if not title or title_key in seen_titles:
+            if not title or title_key in seen_titles or self._looks_like_bad_title(title):
+                continue
+            if self._looks_like_historical_backfill(article):
                 continue
             seen_titles.add(title_key)
 
@@ -267,6 +270,32 @@ class DailyDigestJob:
             reasons.append("possible event/newsletter noise")
 
         return score, reasons or ["recent article"]
+
+    def _looks_like_historical_backfill(self, article: dict[str, Any]) -> bool:
+        article_date = article.get("published_at") or article.get("created_at")
+        url_date = self._extract_date_from_url(
+            article.get("canonical_url") or article.get("original_link") or ""
+        )
+        if not article_date or not url_date:
+            return False
+        if isinstance(article_date, datetime):
+            article_date = article_date.date()
+        return url_date < article_date - timedelta(days=self._config.period_days)
+
+    @staticmethod
+    def _looks_like_bad_title(title: str) -> bool:
+        normalized = " ".join(title.lower().split())
+        return normalized in {"medium", "untitled", "home"}
+
+    @staticmethod
+    def _extract_date_from_url(url: str) -> Optional[date]:
+        match = re.search(r"/(20\d{2})/([01]\d)/([0-3]\d)(?:/|$)", url or "")
+        if not match:
+            return None
+        try:
+            return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        except ValueError:
+            return None
 
     async def _generate_best_article_review(self, best_article: dict[str, Any]) -> dict[str, str]:
         from critical_review_generator import get_critical_review_generator

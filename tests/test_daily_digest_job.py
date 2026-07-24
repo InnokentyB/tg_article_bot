@@ -86,3 +86,39 @@ def test_daily_digest_message_contains_top_five_and_best_review() -> None:
     assert "5. Article 5" in message
     assert "Статья дня" in message
     assert "Критический разбор лучшей статьи." in message
+
+
+def test_daily_digest_filters_historical_backfill_by_url_date() -> None:
+    job = DailyDigestJob(
+        db_manager=object(),
+        config=DailyDigestConfig(period_days=3, max_articles=5),
+    )
+    historical = _candidate(
+        1,
+        "Old but ingested today",
+        text="AI agents " * 500,
+        source_metadata={"tier": 1, "noise_risk": "low"},
+        embedding_count=8,
+    )
+    historical["canonical_url"] = "https://example.com/2024/07/25/old-article.html"
+    current = _candidate(
+        2,
+        "Current product article",
+        text="AI agents " * 300,
+        source_metadata={"tier": 1, "noise_risk": "low"},
+        embedding_count=4,
+    )
+
+    ranked = job._rank_candidates([historical, current])
+
+    assert [article["article_id"] for article in ranked] == [2]
+
+
+def test_daily_digest_filters_bad_titles() -> None:
+    job = DailyDigestJob(db_manager=object(), config=DailyDigestConfig())
+    bad = _candidate(1, "Medium", text="AI agents " * 300)
+    good = _candidate(2, "Useful AI article", text="AI agents " * 300)
+
+    ranked = job._rank_candidates([bad, good])
+
+    assert [article["article_id"] for article in ranked] == [2]
