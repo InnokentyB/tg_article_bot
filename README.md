@@ -52,6 +52,26 @@ EMBEDDING_PROVIDER="fake" # 'fake' для локальных хэш-вектор
 REVIEW_GENERATOR_PROVIDER="fake" # 'fake' или 'openai'
 ```
 
+### 1.1. Ежедневный дайджест
+API умеет собирать ежедневный редакционный дайджест: 5 лучших статей за последние 3 дня, одну статью дня и критический разбор для канала «Читатель Use Case».
+
+Ручной безопасный запуск без публикации:
+```bash
+curl -X POST "$API_BASE_URL/jobs/daily-digest/run" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run": true, "period_days": 3, "max_articles": 5}'
+```
+
+Автозапуск и публикация управляются отдельно:
+```bash
+DAILY_DIGEST_ENABLED=false
+DAILY_DIGEST_RUN_AT=09:00
+DAILY_DIGEST_PUBLISH_ENABLED=false
+TELEGRAM_TOKEN="your_bot_token"
+TELEGRAM_CHAT_ID="your_channel_id"
+```
+
 ### 2. Запуск сервисов
 Для запуска базы данных, Redis и API-сервера:
 ```bash

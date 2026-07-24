@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 db_manager = None
 rss_worker = None
 gmail_worker = None
+daily_digest_worker = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -72,7 +73,7 @@ async def lifespan(app: FastAPI):
         db_manager = None
 
     # Start background RSS worker (only when DB is available)
-    global rss_worker, gmail_worker
+    global rss_worker, gmail_worker, daily_digest_worker
     if db_manager:
         try:
             from rss_worker import RSSWorker
@@ -92,6 +93,15 @@ async def lifespan(app: FastAPI):
             logger.warning(f"⚠️ Gmail worker failed to start: {gmail_err}")
             gmail_worker = None
 
+        try:
+            from daily_digest_job import DailyDigestWorker
+            daily_digest_worker = DailyDigestWorker(db_manager)
+            daily_digest_worker.start()
+            logger.info("✅ Daily digest worker configured")
+        except Exception as digest_err:
+            logger.warning(f"⚠️ Daily digest worker failed to start: {digest_err}")
+            daily_digest_worker = None
+
     yield
 
     # Shutdown
@@ -102,6 +112,9 @@ async def lifespan(app: FastAPI):
     if gmail_worker:
         gmail_worker.stop()
         logger.info("Gmail worker stopped")
+    if daily_digest_worker:
+        daily_digest_worker.stop()
+        logger.info("Daily digest worker stopped")
     if db_manager:
         await db_manager.close()
         logger.info("Database connection closed")
@@ -991,6 +1004,38 @@ async def create_critical_review(request_data: dict, auth: bool = Depends(verify
         "review_markdown": generated["review_markdown"],
         "telegram_draft": generated["telegram_draft"],
     }
+
+
+@app.post("/jobs/daily-digest/run")
+async def run_daily_digest_job(request_data: dict, auth: bool = Depends(verify_api_key)):
+    """Run the daily digest job manually.
+
+    Defaults to dry-run. To publish, send {"dry_run": false, "publish": true}
+    and enable Telegram credentials in the environment.
+    """
+    global db_manager
+
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    from daily_digest_job import DailyDigestConfig, DailyDigestJob
+
+    config = DailyDigestConfig.from_env()
+    if request_data.get("period_days") is not None:
+        config.period_days = max(1, min(int(request_data["period_days"]), 14))
+    if request_data.get("max_articles") is not None:
+        config.max_articles = max(1, min(int(request_data["max_articles"]), 10))
+    if request_data.get("topic"):
+        config.topic = str(request_data["topic"]).strip()
+    if "language" in request_data:
+        config.language = request_data.get("language") or None
+
+    dry_run = bool(request_data.get("dry_run", True))
+    publish = bool(request_data.get("publish", False))
+
+    job = DailyDigestJob(db_manager, config=config)
+    return await job.run(dry_run=dry_run, publish=publish)
+
 
 @app.post("/articles")
 async def create_article(article_data: dict, auth: bool = Depends(verify_api_key)):
