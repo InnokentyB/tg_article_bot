@@ -68,8 +68,21 @@ curl -X POST "$API_BASE_URL/jobs/daily-digest/run" \
 DAILY_DIGEST_ENABLED=false
 DAILY_DIGEST_RUN_AT=09:00
 DAILY_DIGEST_PUBLISH_ENABLED=false
+WEEKLY_DIGEST_ENABLED=false
+WEEKLY_DIGEST_RUN_AT=10:00
+WEEKLY_DIGEST_WEEKDAY=0
+WEEKLY_DIGEST_TOPIC="AI agents and knowledge base systems"
+WEEKLY_DIGEST_PUBLISH_ENABLED=false
 TELEGRAM_TOKEN="your_bot_token"
 TELEGRAM_CHAT_ID="your_channel_id"
+```
+
+Ручной запуск недельного тематического дайджеста:
+```bash
+curl -X POST "$API_BASE_URL/jobs/weekly-digest/run" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run": true, "topic": "RAG and knowledge bases", "period_days": 7, "max_articles": 7}'
 ```
 
 ### 2. Запуск сервисов

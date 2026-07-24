@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from daily_digest_job import DailyDigestConfig, DailyDigestJob
+from daily_digest_job import (
+    DailyDigestConfig,
+    DailyDigestJob,
+    WeeklyDigestConfig,
+    WeeklyThematicDigestJob,
+)
 
 
 def _candidate(
@@ -122,3 +127,58 @@ def test_daily_digest_filters_bad_titles() -> None:
     ranked = job._rank_candidates([bad, good])
 
     assert [article["article_id"] for article in ranked] == [2]
+
+
+def test_weekly_digest_message_contains_topic_and_articles() -> None:
+    job = WeeklyThematicDigestJob(
+        db_manager=object(),
+        config=WeeklyDigestConfig(topic="RAG and knowledge bases", max_articles=3),
+    )
+    ranked = [
+        _candidate(index, f"RAG article {index}", text="rag knowledge base " * 300)
+        for index in range(1, 4)
+    ]
+
+    message = job._build_weekly_telegram_message(
+        week_start=datetime(2026, 7, 20, tzinfo=timezone.utc).date(),
+        ranked_articles=ranked,
+        review="Недельный обзор темы.",
+    )
+
+    assert "недельный тематический дайджест" in message
+    assert "RAG and knowledge bases" in message
+    assert "1. RAG article 1" in message
+    assert "3. RAG article 3" in message
+    assert "Недельный обзор темы." in message
+
+
+def test_weekly_digest_week_start_is_monday() -> None:
+    friday = datetime(2026, 7, 24, tzinfo=timezone.utc)
+
+    assert WeeklyThematicDigestJob._week_start(friday).isoformat() == "2026-07-20"
+
+
+def test_weekly_digest_topic_terms_boost_relevant_articles() -> None:
+    job = WeeklyThematicDigestJob(
+        db_manager=object(),
+        config=WeeklyDigestConfig(topic="RAG knowledge bases", max_articles=5),
+    )
+    relevant = _candidate(
+        1,
+        "Building RAG knowledge bases",
+        text="retrieval " * 300,
+        source_metadata={"tier": 1, "noise_risk": "low"},
+        embedding_count=2,
+    )
+    generic = _candidate(
+        2,
+        "Generic engineering post",
+        text="engineering " * 300,
+        source_metadata={"tier": 1, "noise_risk": "low"},
+        embedding_count=2,
+    )
+
+    ranked = job._rank_candidates([generic, relevant])
+
+    assert ranked[0]["article_id"] == 1
+    assert "matches digest topic" in ranked[0]["selection_reason"]

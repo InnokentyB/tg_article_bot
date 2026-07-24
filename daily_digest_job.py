@@ -37,6 +37,25 @@ class DailyDigestConfig:
         )
 
 
+@dataclass
+class WeeklyDigestConfig:
+    period_days: int = 7
+    max_articles: int = 7
+    topic: str = "AI agents and knowledge base systems"
+    language: Optional[str] = None
+    publish_enabled: bool = False
+
+    @classmethod
+    def from_env(cls) -> "WeeklyDigestConfig":
+        return cls(
+            period_days=int(os.getenv("WEEKLY_DIGEST_PERIOD_DAYS", "7")),
+            max_articles=int(os.getenv("WEEKLY_DIGEST_MAX_ARTICLES", "7")),
+            topic=os.getenv("WEEKLY_DIGEST_TOPIC", "AI agents and knowledge base systems"),
+            language=os.getenv("WEEKLY_DIGEST_LANGUAGE") or None,
+            publish_enabled=os.getenv("WEEKLY_DIGEST_PUBLISH_ENABLED", "false").lower() == "true",
+        )
+
+
 class DailyDigestJob:
     """Select recent articles, generate a daily review, and optionally publish it."""
 
@@ -258,6 +277,12 @@ class DailyDigestJob:
             score += min(1.5, 0.35 * len(matched_terms))
             reasons.append("matches editorial focus")
 
+        topic_terms = self._topic_terms(self._config.topic)
+        matched_topic_terms = [term for term in topic_terms if term in title_and_summary]
+        if matched_topic_terms:
+            score += min(1.2, 0.3 * len(matched_topic_terms))
+            reasons.append("matches digest topic")
+
         popularity = float(article.get("popularity_score") or 0)
         engagement = sum(float(article.get(field) or 0) for field in ("views_count", "likes_count", "comments_count"))
         if popularity or engagement:
@@ -296,6 +321,15 @@ class DailyDigestJob:
             return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
         except ValueError:
             return None
+
+    @staticmethod
+    def _topic_terms(topic: str) -> list[str]:
+        terms = []
+        for raw_term in re.split(r"[^a-zA-Z0-9а-яА-ЯёЁ]+", topic.lower()):
+            term = raw_term.strip()
+            if len(term) >= 3 and term not in {"and", "the", "for", "with", "или", "для"}:
+                terms.append(term)
+        return sorted(set(terms))
 
     async def _generate_best_article_review(self, best_article: dict[str, Any]) -> dict[str, str]:
         from critical_review_generator import get_critical_review_generator
@@ -508,3 +542,256 @@ class DailyDigestWorker:
         except Exception:
             logger.warning("[DailyDigestWorker] Invalid DAILY_DIGEST_RUN_AT=%r, using 09:00.", value)
             return time(9, 0)
+
+
+class WeeklyThematicDigestJob(DailyDigestJob):
+    """Generate a weekly thematic digest draft."""
+
+    def __init__(self, db_manager, config: Optional[WeeklyDigestConfig] = None) -> None:
+        weekly_config = config or WeeklyDigestConfig.from_env()
+        super().__init__(
+            db_manager,
+            config=DailyDigestConfig(
+                period_days=weekly_config.period_days,
+                max_articles=weekly_config.max_articles,
+                topic=weekly_config.topic,
+                language=weekly_config.language,
+                publish_enabled=weekly_config.publish_enabled,
+            ),
+        )
+        self._weekly_config = weekly_config
+
+    async def run(
+        self,
+        *,
+        publish: Optional[bool] = None,
+        dry_run: bool = True,
+        now: Optional[datetime] = None,
+    ) -> dict[str, Any]:
+        if not self._db or not self._db.pool:
+            raise RuntimeError("Database pool not initialized")
+
+        now = now or datetime.now(timezone.utc)
+        publish = self._weekly_config.publish_enabled if publish is None else publish
+        week_start = self._week_start(now)
+        topic_slug = self._slugify(self._weekly_config.topic)
+
+        if not dry_run and await self._weekly_digest_exists(week_start, topic_slug):
+            return {
+                "status": "skipped",
+                "reason": "weekly thematic digest already exists",
+                "week_start": week_start.isoformat(),
+                "topic": self._weekly_config.topic,
+            }
+
+        candidates = await self._load_recent_candidates(now)
+        ranked_articles = self._rank_candidates(candidates)[: self._weekly_config.max_articles]
+        if not ranked_articles:
+            return {
+                "status": "skipped",
+                "reason": "no recent articles found",
+                "week_start": week_start.isoformat(),
+                "topic": self._weekly_config.topic,
+            }
+
+        generated = await self._generate_weekly_review(ranked_articles)
+        telegram_message = self._build_weekly_telegram_message(
+            week_start=week_start,
+            ranked_articles=ranked_articles,
+            review=generated["telegram_draft"],
+        )
+
+        review_id = None
+        if not dry_run:
+            review_id = await self._store_weekly_review(
+                week_start=week_start,
+                topic_slug=topic_slug,
+                ranked_articles=ranked_articles,
+                generated=generated,
+                telegram_message=telegram_message,
+                publish=publish,
+            )
+
+        published = False
+        if publish and not dry_run:
+            published = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._publish_message,
+                telegram_message,
+            )
+
+        return {
+            "status": "completed",
+            "week_start": week_start.isoformat(),
+            "period_days": self._weekly_config.period_days,
+            "topic": self._weekly_config.topic,
+            "review_id": review_id,
+            "dry_run": dry_run,
+            "publish_requested": publish,
+            "published": published,
+            "digest_articles": [self._public_article(article) for article in ranked_articles],
+            "telegram_message": telegram_message,
+            "review_markdown": generated["review_markdown"],
+        }
+
+    async def _generate_weekly_review(self, ranked_articles: list[dict[str, Any]]) -> dict[str, str]:
+        from critical_review_generator import get_critical_review_generator
+
+        generator = get_critical_review_generator()
+        generated = await generator.generate(
+            f"Еженедельный тематический дайджест: {self._weekly_config.topic}",
+            ranked_articles,
+        )
+        generated["generator"] = generator.provider_name
+        return generated
+
+    async def _store_weekly_review(
+        self,
+        *,
+        week_start: date,
+        topic_slug: str,
+        ranked_articles: list[dict[str, Any]],
+        generated: dict[str, str],
+        telegram_message: str,
+        publish: bool,
+    ) -> int:
+        topic_query_id = await self._db.create_topic_query(
+            topic=self._weekly_config.topic,
+            language=self._weekly_config.language,
+            period_days=self._weekly_config.period_days,
+            max_sources=self._weekly_config.max_articles,
+            metadata={
+                "job": "weekly_thematic_digest",
+                "week_start": week_start.isoformat(),
+                "topic_slug": topic_slug,
+            },
+        )
+        return await self._db.create_review(
+            topic_query_id=topic_query_id,
+            title=f"Читатель Use Case: недельный дайджест — {self._weekly_config.topic}",
+            review_markdown=generated["review_markdown"],
+            telegram_draft=telegram_message,
+            selected_sources=[
+                {
+                    "article_id": article["article_id"],
+                    "rank": index,
+                    "selection_reason": article.get("selection_reason"),
+                    "relevance_score": article.get("digest_score"),
+                    "critique_summary": article.get("best_chunk_preview"),
+                }
+                for index, article in enumerate(ranked_articles, start=1)
+            ],
+            status="published" if publish else "draft",
+            metadata={
+                "job": "weekly_thematic_digest",
+                "week_start": week_start.isoformat(),
+                "topic": self._weekly_config.topic,
+                "topic_slug": topic_slug,
+                "period_days": self._weekly_config.period_days,
+                "generator": generated.get("generator"),
+                "publish_requested": publish,
+            },
+        )
+
+    async def _weekly_digest_exists(self, week_start: date, topic_slug: str) -> bool:
+        async with self._db.pool.acquire() as conn:
+            return bool(
+                await conn.fetchval(
+                    """
+                    SELECT 1
+                    FROM reviews
+                    WHERE metadata->>'job' = 'weekly_thematic_digest'
+                      AND metadata->>'week_start' = $1
+                      AND metadata->>'topic_slug' = $2
+                    LIMIT 1
+                    """,
+                    week_start.isoformat(),
+                    topic_slug,
+                )
+            )
+
+    def _build_weekly_telegram_message(
+        self,
+        *,
+        week_start: date,
+        ranked_articles: list[dict[str, Any]],
+        review: str,
+    ) -> str:
+        lines = [
+            f"Читатель Use Case: недельный тематический дайджест",
+            f"Тема: {self._weekly_config.topic}",
+            f"Неделя от: {week_start.isoformat()}",
+            "",
+            "Материалы выпуска:",
+        ]
+        for index, article in enumerate(ranked_articles, start=1):
+            title = article.get("title") or "Без названия"
+            url = article.get("canonical_url") or article.get("original_link") or article.get("source") or ""
+            lines.append(f"{index}. {title}")
+            if url:
+                lines.append(url)
+
+        lines.extend(["", "Обзор:", review])
+        return "\n".join(line for line in lines if line is not None).strip()
+
+    @staticmethod
+    def _week_start(value: datetime) -> date:
+        return (value - timedelta(days=value.weekday())).date()
+
+    @staticmethod
+    def _slugify(value: str) -> str:
+        slug = re.sub(r"[^a-zA-Z0-9а-яА-ЯёЁ]+", "-", value.lower()).strip("-")
+        return slug[:80] or "weekly"
+
+
+class WeeklyDigestWorker:
+    """Small weekly scheduler for thematic digest drafts."""
+
+    def __init__(self, db_manager) -> None:
+        self._db = db_manager
+        self._enabled = os.getenv("WEEKLY_DIGEST_ENABLED", "false").lower() == "true"
+        self._run_at = os.getenv("WEEKLY_DIGEST_RUN_AT", "10:00")
+        self._weekday = int(os.getenv("WEEKLY_DIGEST_WEEKDAY", "0"))
+        self._poll_seconds = int(os.getenv("WEEKLY_DIGEST_POLL_SECONDS", "300"))
+        self._task: Optional[asyncio.Task] = None
+        self._last_run_week: Optional[date] = None
+
+    def start(self) -> None:
+        if not self._enabled:
+            logger.info("[WeeklyDigestWorker] Disabled via WEEKLY_DIGEST_ENABLED=false.")
+            return
+        if self._task and not self._task.done():
+            logger.warning("[WeeklyDigestWorker] Already running.")
+            return
+        self._task = asyncio.create_task(self._loop(), name="weekly_digest_worker")
+        logger.info("[WeeklyDigestWorker] Started. weekday=%d run_at=%s", self._weekday, self._run_at)
+
+    def stop(self) -> None:
+        if self._task and not self._task.done():
+            self._task.cancel()
+            logger.info("[WeeklyDigestWorker] Cancellation requested.")
+
+    async def _loop(self) -> None:
+        while True:
+            try:
+                await self._maybe_run()
+                await asyncio.sleep(self._poll_seconds)
+            except asyncio.CancelledError:
+                logger.info("[WeeklyDigestWorker] Loop cancelled.")
+                break
+            except Exception as exc:
+                logger.exception("[WeeklyDigestWorker] Unexpected error: %s", exc)
+                await asyncio.sleep(self._poll_seconds)
+
+    async def _maybe_run(self) -> None:
+        now = datetime.now(timezone.utc)
+        week_start = WeeklyThematicDigestJob._week_start(now)
+        if self._last_run_week == week_start:
+            return
+        if now.weekday() != self._weekday:
+            return
+        if now.time() < DailyDigestWorker._parse_run_time(self._run_at):
+            return
+        result = await WeeklyThematicDigestJob(self._db).run(dry_run=False, now=now)
+        self._last_run_week = week_start
+        logger.info("[WeeklyDigestWorker] Run result: %s", result.get("status"))

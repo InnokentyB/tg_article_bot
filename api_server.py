@@ -22,6 +22,7 @@ db_manager = None
 rss_worker = None
 gmail_worker = None
 daily_digest_worker = None
+weekly_digest_worker = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -73,7 +74,7 @@ async def lifespan(app: FastAPI):
         db_manager = None
 
     # Start background RSS worker (only when DB is available)
-    global rss_worker, gmail_worker, daily_digest_worker
+    global rss_worker, gmail_worker, daily_digest_worker, weekly_digest_worker
     if db_manager:
         try:
             from rss_worker import RSSWorker
@@ -102,6 +103,15 @@ async def lifespan(app: FastAPI):
             logger.warning(f"⚠️ Daily digest worker failed to start: {digest_err}")
             daily_digest_worker = None
 
+        try:
+            from daily_digest_job import WeeklyDigestWorker
+            weekly_digest_worker = WeeklyDigestWorker(db_manager)
+            weekly_digest_worker.start()
+            logger.info("✅ Weekly digest worker configured")
+        except Exception as weekly_digest_err:
+            logger.warning(f"⚠️ Weekly digest worker failed to start: {weekly_digest_err}")
+            weekly_digest_worker = None
+
     yield
 
     # Shutdown
@@ -115,6 +125,9 @@ async def lifespan(app: FastAPI):
     if daily_digest_worker:
         daily_digest_worker.stop()
         logger.info("Daily digest worker stopped")
+    if weekly_digest_worker:
+        weekly_digest_worker.stop()
+        logger.info("Weekly digest worker stopped")
     if db_manager:
         await db_manager.close()
         logger.info("Database connection closed")
@@ -1034,6 +1047,36 @@ async def run_daily_digest_job(request_data: dict, auth: bool = Depends(verify_a
     publish = bool(request_data.get("publish", False))
 
     job = DailyDigestJob(db_manager, config=config)
+    return await job.run(dry_run=dry_run, publish=publish)
+
+
+@app.post("/jobs/weekly-digest/run")
+async def run_weekly_digest_job(request_data: dict, auth: bool = Depends(verify_api_key)):
+    """Run a weekly thematic digest manually.
+
+    Defaults to dry-run. Send {"topic": "...", "dry_run": false} to store a draft.
+    """
+    global db_manager
+
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    from daily_digest_job import WeeklyDigestConfig, WeeklyThematicDigestJob
+
+    config = WeeklyDigestConfig.from_env()
+    if request_data.get("period_days") is not None:
+        config.period_days = max(3, min(int(request_data["period_days"]), 30))
+    if request_data.get("max_articles") is not None:
+        config.max_articles = max(3, min(int(request_data["max_articles"]), 15))
+    if request_data.get("topic"):
+        config.topic = str(request_data["topic"]).strip()
+    if "language" in request_data:
+        config.language = request_data.get("language") or None
+
+    dry_run = bool(request_data.get("dry_run", True))
+    publish = bool(request_data.get("publish", False))
+
+    job = WeeklyThematicDigestJob(db_manager, config=config)
     return await job.run(dry_run=dry_run, publish=publish)
 
 
