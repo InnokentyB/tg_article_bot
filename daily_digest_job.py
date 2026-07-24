@@ -191,15 +191,19 @@ class DailyDigestJob:
     def _rank_candidates(self, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ranked = []
         seen_titles: set[str] = set()
+        seen_urls: set[str] = set()
 
         for article in candidates:
             title = (article.get("title") or "").strip()
             title_key = " ".join(title.lower().split())
-            if not title or title_key in seen_titles or self._looks_like_bad_title(title):
+            url_key = self._canonical_url_key(article)
+            if not title or title_key in seen_titles or url_key in seen_urls or self._looks_like_bad_title(title):
                 continue
             if self._looks_like_historical_backfill(article):
                 continue
             seen_titles.add(title_key)
+            if url_key:
+                seen_urls.add(url_key)
 
             score, reasons = self._score_article(article)
             article["digest_score"] = round(score, 4)
@@ -484,6 +488,12 @@ class DailyDigestJob:
             "digest_score": article.get("digest_score"),
             "selection_reason": article.get("selection_reason"),
         }
+
+    @staticmethod
+    def _canonical_url_key(article: dict[str, Any]) -> str:
+        url = article.get("canonical_url") or article.get("original_link") or ""
+        url = url.split("#", 1)[0].split("?", 1)[0].strip().rstrip("/")
+        return url.lower()
 
 
 class DailyDigestWorker:

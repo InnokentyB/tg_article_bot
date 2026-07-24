@@ -129,6 +129,19 @@ def test_daily_digest_filters_bad_titles() -> None:
     assert [article["article_id"] for article in ranked] == [2]
 
 
+def test_daily_digest_deduplicates_by_canonical_url() -> None:
+    job = DailyDigestJob(db_manager=object(), config=DailyDigestConfig())
+    first = _candidate(1, "First title", text="AI agents " * 300)
+    second = _candidate(2, "Second title", text="AI agents " * 300)
+    first["canonical_url"] = "https://example.com/same?utm=one"
+    second["canonical_url"] = "https://example.com/same#section"
+
+    ranked = job._rank_candidates([first, second])
+
+    assert len(ranked) == 1
+    assert ranked[0]["article_id"] == 1
+
+
 def test_weekly_digest_message_contains_topic_and_articles() -> None:
     job = WeeklyThematicDigestJob(
         db_manager=object(),
