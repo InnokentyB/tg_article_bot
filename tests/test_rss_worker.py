@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import types
 import sys
 from pathlib import Path
 
@@ -66,6 +67,53 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
         assert fetched == [2, 4]
 
     asyncio.run(run())
+
+
+def test_rss_worker_passes_source_id_to_ingestion(monkeypatch) -> None:
+    monkeypatch.setenv("WORKER_ENABLED", "true")
+
+    class FakeDB:
+        async def update_source_last_fetched(self, source_id: int) -> None:
+            assert source_id == 42
+
+    captured_payloads = []
+
+    async def fake_ingest_fn(payload: dict) -> dict:
+        captured_payloads.append(payload)
+        return {"status": "created"}
+
+    async def run() -> None:
+        worker = RSSWorker(db_manager=FakeDB(), ingest_fn=fake_ingest_fn)
+
+        class ParsedFeed:
+            bozo = False
+            entries = [
+                {
+                    "link": "https://example.com/articles/one",
+                    "title": "One",
+                    "summary": "<p>Useful article</p>",
+                }
+            ]
+
+        monkeypatch.setitem(
+            __import__("sys").modules,
+            "feedparser",
+            types.SimpleNamespace(parse=lambda _url: ParsedFeed()),
+        )
+
+        await worker._fetch_source(
+            {
+                "id": 42,
+                "name": "Example Feed",
+                "url": "https://example.com/feed.xml",
+                "source_type": "rss",
+                "language": "en",
+            }
+        )
+
+    asyncio.run(run())
+
+    assert captured_payloads[0]["source_id"] == 42
 
 
 def test_rss_worker_parses_modernanalyst_article_listing() -> None:

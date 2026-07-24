@@ -405,13 +405,15 @@ async def ingest_url_payload(article_data: dict) -> dict:
     categories = await basic_categorize(text)
 
     try:
-        source_id = await db_manager.upsert_source(
-            name=source_name,
-            url=source_url,
-            source_type=article_data.get("source_type", "web"),
-            language=language,
-            metadata={"ingested_from": "url"},
-        )
+        source_id = article_data.get("source_id")
+        if source_id is None:
+            source_id = await db_manager.upsert_source(
+                name=source_name,
+                url=source_url,
+                source_type=article_data.get("source_type", "web"),
+                language=language,
+                metadata={"ingested_from": "url"},
+            )
 
         article_id, fingerprint = await db_manager.save_article(
             title=title,
@@ -547,6 +549,7 @@ async def ingest_rss(feed_data: dict, auth: bool = Depends(verify_api_key)):
             result = await ingest_url_payload(
                 {
                     "url": entry_url,
+                    "source_id": source_id,
                     "title": entry.get("title"),
                     "source_name": resolved_source_name,
                     "source_type": "rss_entry",

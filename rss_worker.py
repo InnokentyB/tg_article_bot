@@ -203,6 +203,7 @@ class RSSWorker:
                 result = await self._ingest_fn(
                     {
                         "url": entry_url,
+                        "source_id": source_id,
                         "title": entry.get("title"),
                         "source_name": source_name,
                         "source_type": "rss_entry",
