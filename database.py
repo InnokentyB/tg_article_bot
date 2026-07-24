@@ -7,7 +7,7 @@ import json
 import logging
 from typing import Any, List, Dict, Optional, Tuple
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -466,8 +466,9 @@ class DatabaseManager:
         detected_type = source_type or self.detect_source_type(normalized_url)
         if not detected_type:
             return None
+        detected_type = detected_type[:50]
 
-        next_check_at = datetime.utcnow() + timedelta(days=max(1, check_after_days))
+        next_check_at = datetime.now(timezone.utc) + timedelta(days=max(1, check_after_days))
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
@@ -510,7 +511,7 @@ class DatabaseManager:
         if hostname.endswith("dev.to"):
             return "dev"
         if hostname:
-            return hostname.replace(".", "_")
+            return hostname.replace(".", "_")[:50]
         return None
 
     async def get_due_external_source_stats(self, limit: int = 50) -> List[Dict]:
@@ -568,7 +569,8 @@ class DatabaseManager:
         comments_count = int(stats.get("comments_count") or 0)
         likes_count = int(stats.get("likes_count") or 0)
         bookmarks_count = int(stats.get("bookmarks_count") or 0)
-        next_check_at = datetime.utcnow() + timedelta(days=max(1, next_check_days))
+        source_type = source_type[:50]
+        next_check_at = datetime.now(timezone.utc) + timedelta(days=max(1, next_check_days))
 
         async with self.pool.acquire() as conn:
             async with conn.transaction():
