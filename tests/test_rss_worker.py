@@ -52,6 +52,8 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
                 {"id": 2, "name": "RSS source", "source_type": "rss"},
                 {"id": 3, "name": "Article source", "source_type": "rss_entry"},
                 {"id": 4, "name": "Modern Analyst", "source_type": "modernanalyst_html"},
+                {"id": 5, "name": "Mind the Product", "source_type": "mindtheproduct_json"},
+                {"id": 6, "name": "IREB", "source_type": "ireb_html"},
             ]
 
     async def run() -> None:
@@ -64,7 +66,7 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
         worker._fetch_source = fake_fetch_source
         await worker._poll_once()
 
-        assert fetched == [2, 4]
+        assert fetched == [2, 4, 5, 6]
 
     asyncio.run(run())
 
@@ -158,3 +160,80 @@ def test_rss_worker_parses_modernanalyst_article_listing() -> None:
         "Stop-Writing-User-Stories-for-AI-Agents-They-Need-Decision-Contracts.aspx"
     )
     assert "decision contracts" in entries[0]["fallback_text"]
+
+
+def test_rss_worker_parses_mindtheproduct_json_feed() -> None:
+    payload = {
+        "results": [
+            {
+                "data": {
+                    "title": "Evals are the new PRD",
+                    "url": "https://www.mindtheproduct.com/evals-are-the-new-prd",
+                    "authors": [
+                        {
+                            "author": {
+                                "value": {
+                                    "data": {
+                                        "displayName": "Lisa Murkin",
+                                    }
+                                }
+                            }
+                        }
+                    ],
+                }
+            },
+            {
+                "data": {
+                    "title": "External",
+                    "url": "https://example.com/external",
+                }
+            },
+        ]
+    }
+
+    entries = RSSWorker._parse_mindtheproduct_items(payload)
+
+    assert entries == [
+        {
+            "title": "Evals are the new PRD",
+            "link": "https://www.mindtheproduct.com/evals-are-the-new-prd",
+            "summary": "Lisa Murkin",
+            "fallback_text": "Evals are the new PRD\n\nLisa Murkin",
+        }
+    ]
+
+
+def test_rss_worker_parses_ireb_article_listing() -> None:
+    html = """
+    <html><body>
+      <article>
+        <h2>Using AI to discover more innovative requirements from documents</h2>
+        <p>Revisiting models of creativity for AI.</p>
+        <a href="/articles/using-ai-to-discover-more-innovative-requirements-from-documents">
+          Read article
+        </a>
+      </article>
+      <article>
+        <a href="https://re-magazine.ireb.org/articles/ethics-of-using-llms-in-requirements-engineering">
+          Ethics of Using LLMs in Requirements Engineering
+        </a>
+      </article>
+      <a href="https://re-magazine.ireb.org/articles/view:grid/tags:ai">AI</a>
+      <a href="https://example.com/articles/external">External</a>
+    </body></html>
+    """
+
+    entries = RSSWorker._parse_ireb_articles(
+        html,
+        "https://re-magazine.ireb.org/articles",
+    )
+
+    assert [entry["title"] for entry in entries] == [
+        "Using AI to discover more innovative requirements from documents",
+        "Ethics of Using LLMs in Requirements Engineering",
+    ]
+    assert entries[0]["link"] == (
+        "https://re-magazine.ireb.org/articles/"
+        "using-ai-to-discover-more-innovative-requirements-from-documents"
+    )
+    assert "creativity for AI" in entries[0]["fallback_text"]

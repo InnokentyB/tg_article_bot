@@ -199,6 +199,24 @@ INSERT INTO sources (
     24,
     TRUE,
     '{"tier": 1, "topics": ["knowledge_management", "software_engineering", "devops", "remote_work"], "trust_level": "company_editorial", "noise_risk": "medium", "bias": "vendor", "editorial_role": "public handbook culture, async work, DevOps practice, and engineering process"}'
+  ),
+  (
+    'Mind the Product',
+    'https://www.mindtheproduct.com/feed/',
+    'mindtheproduct_json',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["product_management", "discovery", "strategy", "ai_product"], "trust_level": "industry_editorial", "noise_risk": "medium", "bias": "professional_media", "editorial_role": "product strategy, discovery, positioning, AI product practice, and product leadership commentary"}'
+  ),
+  (
+    'Requirements Engineering Magazine',
+    'https://re-magazine.ireb.org/articles',
+    'ireb_html',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["requirements", "business_analysis", "product", "quality"], "trust_level": "expert_community", "noise_risk": "low", "bias": "professional_community", "editorial_role": "requirements engineering, elicitation, business analysis, validation, and AI-in-RE practice"}'
   )
 ON CONFLICT (url) DO UPDATE SET
     name = EXCLUDED.name,

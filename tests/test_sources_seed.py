@@ -24,7 +24,7 @@ def test_source_catalog_is_valid() -> None:
     for source in catalog["sources"]:
         assert source["name"]
         assert source["url"].startswith("https://")
-        assert source["source_type"] in {"rss", "modernanalyst_html"}
+        assert source["source_type"] in {"rss", "modernanalyst_html", "mindtheproduct_json", "ireb_html"}
         assert source["language"] in {"en", "ru"}
         assert source["fetch_interval_hours"] >= 1
         assert source["metadata"]["tier"] == 1

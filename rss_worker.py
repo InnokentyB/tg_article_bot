@@ -99,7 +99,7 @@ class RSSWorker:
             logger.debug("[RSSWorker] No sources due for fetch.")
             return
 
-        supported_source_types = {"rss", "modernanalyst_html"}
+        supported_source_types = {"rss", "modernanalyst_html", "mindtheproduct_json", "ireb_html"}
         supported_sources = [
             source for source in sources if source.get("source_type") in supported_source_types
         ]
@@ -138,6 +138,12 @@ class RSSWorker:
 
         if source_type == "modernanalyst_html":
             await self._fetch_modernanalyst_source(source)
+            return
+        if source_type == "mindtheproduct_json":
+            await self._fetch_mindtheproduct_source(source)
+            return
+        if source_type == "ireb_html":
+            await self._fetch_ireb_source(source)
             return
 
         logger.info(
@@ -283,6 +289,7 @@ class RSSWorker:
                 result = await self._ingest_fn(
                     {
                         "url": entry["link"],
+                        "source_id": source_id,
                         "title": entry.get("title"),
                         "source_name": source_name,
                         "source_type": "web",
@@ -325,6 +332,128 @@ class RSSWorker:
             errors,
         )
 
+    async def _fetch_mindtheproduct_source(self, source: dict) -> None:
+        """Crawl Mind the Product's JSON feed endpoint."""
+        source_id: int = source["id"]
+        feed_url: str = source.get("url", "")
+        source_name: str = source.get("name", feed_url)
+        language: Optional[str] = source.get("language")
+
+        logger.info(
+            "[RSSWorker] Crawling Mind the Product source_id=%d name=%r url=%s",
+            source_id,
+            source_name,
+            feed_url,
+        )
+
+        try:
+            payload = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._fetch_json,
+                feed_url,
+            )
+            entries = self._parse_mindtheproduct_items(payload)[: self._fetch_limit]
+        except Exception as exc:
+            logger.error(
+                "[RSSWorker] source_id=%d failed to parse Mind the Product feed %s: %s",
+                source_id,
+                feed_url,
+                exc,
+            )
+            return
+
+        await self._ingest_entries(source_id, source_name, language, entries, "mindtheproduct_json_worker")
+
+    async def _fetch_ireb_source(self, source: dict) -> None:
+        """Crawl Requirements Engineering Magazine listings."""
+        source_id: int = source["id"]
+        listing_url: str = source.get("url", "")
+        source_name: str = source.get("name", listing_url)
+        language: Optional[str] = source.get("language")
+
+        logger.info(
+            "[RSSWorker] Crawling IREB source_id=%d name=%r url=%s",
+            source_id,
+            source_name,
+            listing_url,
+        )
+
+        try:
+            html = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._fetch_html,
+                listing_url,
+            )
+            entries = self._parse_ireb_articles(html, listing_url)[: self._fetch_limit]
+        except Exception as exc:
+            logger.error(
+                "[RSSWorker] source_id=%d failed to parse IREB listing %s: %s",
+                source_id,
+                listing_url,
+                exc,
+            )
+            return
+
+        await self._ingest_entries(source_id, source_name, language, entries, "ireb_html_worker")
+
+    async def _ingest_entries(
+        self,
+        source_id: int,
+        source_name: str,
+        language: Optional[str],
+        entries: list[dict],
+        ingestion_method: str,
+    ) -> None:
+        created = duplicates = errors = 0
+        for entry in entries:
+            try:
+                result = await self._ingest_fn(
+                    {
+                        "url": entry["link"],
+                        "source_id": source_id,
+                        "title": entry.get("title"),
+                        "source_name": source_name,
+                        "source_type": "web",
+                        "language": language,
+                        "summary": entry.get("summary"),
+                        "fallback_text": entry.get("fallback_text"),
+                        "ingestion_method": ingestion_method,
+                    }
+                )
+                status = result.get("status", "unknown")
+                if status == "created":
+                    created += 1
+                elif status == "duplicate":
+                    duplicates += 1
+                else:
+                    errors += 1
+            except Exception as exc:
+                logger.error(
+                    "[RSSWorker] source_id=%d entry %s ingestion failed: %s",
+                    source_id,
+                    entry.get("link"),
+                    exc,
+                )
+                errors += 1
+
+        try:
+            await self._db.update_source_last_fetched(source_id)
+        except Exception as exc:
+            logger.error(
+                "[RSSWorker] source_id=%d failed to update last_fetched_at: %s",
+                source_id,
+                exc,
+            )
+
+        logger.info(
+            "[RSSWorker] source_id=%d done: created=%d duplicates=%d errors=%d method=%s",
+            source_id,
+            created,
+            duplicates,
+            errors,
+            ingestion_method,
+        )
+
     @staticmethod
     def _fetch_html(url: str) -> str:
         import requests
@@ -342,6 +471,115 @@ class RSSWorker:
         )
         response.raise_for_status()
         return response.text
+
+    @staticmethod
+    def _fetch_json(url: str) -> dict:
+        import requests
+
+        response = requests.get(
+            url,
+            timeout=30,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (compatible; TGArticlesBot/1.0; "
+                    "+https://github.com/InnokentyB/tg_article_bot)"
+                ),
+                "Accept": "application/json,text/plain,*/*",
+            },
+        )
+        response.raise_for_status()
+        return response.json()
+
+    @classmethod
+    def _parse_mindtheproduct_items(cls, payload: dict) -> list[dict]:
+        """Extract article candidates from Mind the Product's JSON feed."""
+        entries: list[dict] = []
+        seen_urls: set[str] = set()
+
+        for item in payload.get("results", []) or []:
+            data = item.get("data") or {}
+            title = cls._strip_html(data.get("title"))
+            link = (data.get("url") or "").strip()
+            if not title or not link or link in seen_urls:
+                continue
+            parsed = urlparse(link)
+            if parsed.netloc.lower() not in {"www.mindtheproduct.com", "mindtheproduct.com"}:
+                continue
+
+            authors = cls._parse_mindtheproduct_authors(data)
+            summary = ", ".join(authors) if authors else None
+            entries.append(
+                {
+                    "title": title,
+                    "link": link,
+                    "summary": summary,
+                    "fallback_text": "\n\n".join(part for part in (title, summary) if part),
+                }
+            )
+            seen_urls.add(link)
+
+        return entries
+
+    @staticmethod
+    def _parse_mindtheproduct_authors(data: dict) -> list[str]:
+        authors: list[str] = []
+        for item in data.get("authors", []) or []:
+            display_name = (
+                ((item.get("author") or {}).get("value") or {})
+                .get("data", {})
+                .get("displayName")
+            )
+            if display_name:
+                authors.append(str(display_name).strip())
+        return [author for author in authors if author]
+
+    @classmethod
+    def _parse_ireb_articles(cls, html: str, listing_url: str) -> list[dict]:
+        """Extract article candidates from Requirements Engineering Magazine HTML."""
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html or "", "html.parser")
+        entries_by_url: dict[str, dict] = {}
+
+        for anchor in soup.find_all("a", href=True):
+            href = anchor["href"]
+            absolute_url = urljoin(listing_url, href)
+            parsed = urlparse(absolute_url)
+            if parsed.netloc.lower() != "re-magazine.ireb.org":
+                continue
+            if not parsed.path.startswith("/articles/"):
+                continue
+            if any(marker in parsed.path for marker in ("/view:", "/tags:", "/author:", "/sort:")):
+                continue
+
+            title = cls._strip_html(anchor.get_text(" ", strip=True))
+            if not title or title.lower() == "read article":
+                title = cls._find_ireb_article_title(anchor)
+            if not title or absolute_url in entries_by_url:
+                continue
+
+            summary = cls._find_nearby_summary(anchor)
+            entries_by_url[absolute_url] = {
+                "title": title,
+                "link": absolute_url,
+                "summary": summary,
+                "fallback_text": "\n\n".join(part for part in (title, summary) if part),
+            }
+
+        return list(entries_by_url.values())
+
+    @classmethod
+    def _find_ireb_article_title(cls, anchor) -> Optional[str]:
+        card = anchor.find_parent(["article", "li", "div"])
+        if not card:
+            return None
+        for selector in ("h1", "h2", "h3", ".h1", ".h2", ".h3"):
+            element = card.select_one(selector)
+            if element:
+                title = cls._strip_html(element.get_text(" ", strip=True))
+                if title and title.lower() != "read article":
+                    return title
+        return None
 
     @classmethod
     def _parse_modernanalyst_articles(cls, html: str, listing_url: str) -> list[dict]:

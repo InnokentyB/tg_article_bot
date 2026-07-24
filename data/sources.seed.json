@@ -342,6 +342,38 @@
         "bias": "vendor",
         "editorial_role": "public handbook culture, async work, DevOps practice, and engineering process"
       }
+    },
+    {
+      "name": "Mind the Product",
+      "url": "https://www.mindtheproduct.com/feed/",
+      "source_type": "mindtheproduct_json",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["product_management", "discovery", "strategy", "ai_product"],
+        "trust_level": "industry_editorial",
+        "noise_risk": "medium",
+        "bias": "professional_media",
+        "editorial_role": "product strategy, discovery, positioning, AI product practice, and product leadership commentary"
+      }
+    },
+    {
+      "name": "Requirements Engineering Magazine",
+      "url": "https://re-magazine.ireb.org/articles",
+      "source_type": "ireb_html",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["requirements", "business_analysis", "product", "quality"],
+        "trust_level": "expert_community",
+        "noise_risk": "low",
+        "bias": "professional_community",
+        "editorial_role": "requirements engineering, elicitation, business analysis, validation, and AI-in-RE practice"
+      }
     }
   ],
   "candidates": [
@@ -388,20 +420,6 @@
       }
     },
     {
-      "name": "Requirements Engineering Magazine",
-      "url": "https://re-magazine.ireb.org/",
-      "source_type": "manual_web",
-      "language": "en",
-      "reason_not_active": "High-quality requirements engineering source, but no stable RSS/Atom endpoint was found on 2026-07-24.",
-      "metadata": {
-        "tier": 1,
-        "topics": ["requirements", "business_analysis", "product", "quality"],
-        "trust_level": "expert_community",
-        "noise_risk": "low",
-        "bias": "professional_community"
-      }
-    },
-    {
       "name": "BA Times",
       "url": "https://www.batimes.com/",
       "source_type": "manual_web",
@@ -410,20 +428,6 @@
       "metadata": {
         "tier": 2,
         "topics": ["business_analysis", "requirements", "product", "process"],
-        "trust_level": "industry_editorial",
-        "noise_risk": "medium",
-        "bias": "professional_media"
-      }
-    },
-    {
-      "name": "Mind the Product",
-      "url": "https://www.mindtheproduct.com/",
-      "source_type": "manual_web",
-      "language": "en",
-      "reason_not_active": "Its public feed endpoint currently returns JSON, which needs a dedicated JSON-feed adapter before scheduled ingestion.",
-      "metadata": {
-        "tier": 2,
-        "topics": ["product_management", "discovery", "strategy", "ai_product"],
         "trust_level": "industry_editorial",
         "noise_risk": "medium",
         "bias": "professional_media"
