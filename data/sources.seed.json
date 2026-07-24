@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-07-07",
+  "updated_at": "2026-07-24",
   "policy": {
     "active_seed_rule": "Only verified RSS/Atom sources are active by default.",
     "discovery_rule": "Aggregators are candidates for later ranking, not default review sources.",
@@ -246,6 +246,102 @@
         "bias": "vendor_press",
         "editorial_role": "business analysis vendor, requirements management, tooling, and industry announcements"
       }
+    },
+    {
+      "name": "Simon Willison AI Agents",
+      "url": "https://simonwillison.net/tags/ai-agents.atom",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 12,
+      "metadata": {
+        "tier": 1,
+        "topics": ["ai", "agents", "llm", "engineering_practice"],
+        "trust_level": "expert",
+        "noise_risk": "low",
+        "bias": "independent_practitioner",
+        "editorial_role": "hands-on AI agent analysis, tooling notes, and critical implementation context"
+      }
+    },
+    {
+      "name": "Simon Willison RAG",
+      "url": "https://simonwillison.net/tags/rag.atom",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 12,
+      "metadata": {
+        "tier": 1,
+        "topics": ["rag", "llm", "knowledge_base", "engineering_practice"],
+        "trust_level": "expert",
+        "noise_risk": "low",
+        "bias": "independent_practitioner",
+        "editorial_role": "retrieval, embeddings, and LLM application implementation notes"
+      }
+    },
+    {
+      "name": "Eugene Yan",
+      "url": "https://eugeneyan.com/rss/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["ai", "llm", "mlops", "recommendations", "evaluation"],
+        "trust_level": "expert",
+        "noise_risk": "low",
+        "bias": "independent_practitioner",
+        "editorial_role": "production AI, recommender systems, evaluation, and applied ML tradeoffs"
+      }
+    },
+    {
+      "name": "Chip Huyen",
+      "url": "https://huyenchip.com/feed.xml",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["ai_engineering", "llm", "mlops", "production_ai"],
+        "trust_level": "expert",
+        "noise_risk": "low",
+        "bias": "independent_practitioner",
+        "editorial_role": "AI engineering systems, deployment practice, and production tradeoffs"
+      }
+    },
+    {
+      "name": "Atlassian Teamwork",
+      "url": "https://www.atlassian.com/blog/teamwork/feed",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["knowledge_management", "collaboration", "team_process", "productivity"],
+        "trust_level": "vendor_editorial",
+        "noise_risk": "medium",
+        "bias": "vendor",
+        "editorial_role": "knowledge sharing, collaboration practice, documentation culture, and team operating patterns"
+      }
+    },
+    {
+      "name": "GitLab Blog",
+      "url": "https://about.gitlab.com/atom.xml",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["knowledge_management", "software_engineering", "devops", "remote_work"],
+        "trust_level": "company_editorial",
+        "noise_risk": "medium",
+        "bias": "vendor",
+        "editorial_role": "public handbook culture, async work, DevOps practice, and engineering process"
+      }
     }
   ],
   "candidates": [
@@ -289,6 +385,48 @@
         "trust_level": "editorial",
         "noise_risk": "medium",
         "bias": "editorial"
+      }
+    },
+    {
+      "name": "Requirements Engineering Magazine",
+      "url": "https://re-magazine.ireb.org/",
+      "source_type": "manual_web",
+      "language": "en",
+      "reason_not_active": "High-quality requirements engineering source, but no stable RSS/Atom endpoint was found on 2026-07-24.",
+      "metadata": {
+        "tier": 1,
+        "topics": ["requirements", "business_analysis", "product", "quality"],
+        "trust_level": "expert_community",
+        "noise_risk": "low",
+        "bias": "professional_community"
+      }
+    },
+    {
+      "name": "BA Times",
+      "url": "https://www.batimes.com/",
+      "source_type": "manual_web",
+      "language": "en",
+      "reason_not_active": "Useful business analysis publication, but its RSS endpoint returned 403 during verification on 2026-07-24.",
+      "metadata": {
+        "tier": 2,
+        "topics": ["business_analysis", "requirements", "product", "process"],
+        "trust_level": "industry_editorial",
+        "noise_risk": "medium",
+        "bias": "professional_media"
+      }
+    },
+    {
+      "name": "Mind the Product",
+      "url": "https://www.mindtheproduct.com/",
+      "source_type": "manual_web",
+      "language": "en",
+      "reason_not_active": "Its public feed endpoint currently returns JSON, which needs a dedicated JSON-feed adapter before scheduled ingestion.",
+      "metadata": {
+        "tier": 2,
+        "topics": ["product_management", "discovery", "strategy", "ai_product"],
+        "trust_level": "industry_editorial",
+        "noise_risk": "medium",
+        "bias": "professional_media"
       }
     }
   ]

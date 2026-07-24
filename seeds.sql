@@ -145,6 +145,60 @@ INSERT INTO sources (
     24,
     TRUE,
     '{"tier": 1, "topics": ["business_analysis", "requirements", "vendor_news", "tools"], "trust_level": "industry_news", "noise_risk": "medium", "bias": "vendor_press", "editorial_role": "business analysis vendor, requirements management, tooling, and industry announcements"}'
+  ),
+  (
+    'Simon Willison AI Agents',
+    'https://simonwillison.net/tags/ai-agents.atom',
+    'rss',
+    'en',
+    12,
+    TRUE,
+    '{"tier": 1, "topics": ["ai", "agents", "llm", "engineering_practice"], "trust_level": "expert", "noise_risk": "low", "bias": "independent_practitioner", "editorial_role": "hands-on AI agent analysis, tooling notes, and critical implementation context"}'
+  ),
+  (
+    'Simon Willison RAG',
+    'https://simonwillison.net/tags/rag.atom',
+    'rss',
+    'en',
+    12,
+    TRUE,
+    '{"tier": 1, "topics": ["rag", "llm", "knowledge_base", "engineering_practice"], "trust_level": "expert", "noise_risk": "low", "bias": "independent_practitioner", "editorial_role": "retrieval, embeddings, and LLM application implementation notes"}'
+  ),
+  (
+    'Eugene Yan',
+    'https://eugeneyan.com/rss/',
+    'rss',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["ai", "llm", "mlops", "recommendations", "evaluation"], "trust_level": "expert", "noise_risk": "low", "bias": "independent_practitioner", "editorial_role": "production AI, recommender systems, evaluation, and applied ML tradeoffs"}'
+  ),
+  (
+    'Chip Huyen',
+    'https://huyenchip.com/feed.xml',
+    'rss',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["ai_engineering", "llm", "mlops", "production_ai"], "trust_level": "expert", "noise_risk": "low", "bias": "independent_practitioner", "editorial_role": "AI engineering systems, deployment practice, and production tradeoffs"}'
+  ),
+  (
+    'Atlassian Teamwork',
+    'https://www.atlassian.com/blog/teamwork/feed',
+    'rss',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["knowledge_management", "collaboration", "team_process", "productivity"], "trust_level": "vendor_editorial", "noise_risk": "medium", "bias": "vendor", "editorial_role": "knowledge sharing, collaboration practice, documentation culture, and team operating patterns"}'
+  ),
+  (
+    'GitLab Blog',
+    'https://about.gitlab.com/atom.xml',
+    'rss',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["knowledge_management", "software_engineering", "devops", "remote_work"], "trust_level": "company_editorial", "noise_risk": "medium", "bias": "vendor", "editorial_role": "public handbook culture, async work, DevOps practice, and engineering process"}'
   )
 ON CONFLICT (url) DO UPDATE SET
     name = EXCLUDED.name,
