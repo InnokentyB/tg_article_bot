@@ -77,6 +77,15 @@ TELEGRAM_TOKEN="your_bot_token"
 TELEGRAM_CHAT_ID="your_channel_id"
 ```
 
+Проверка Telegram перед реальной публикацией:
+```bash
+curl -X POST "$API_BASE_URL/telegram/validate" \
+  -H "Authorization: Bearer $API_KEY"
+
+curl -X POST "$API_BASE_URL/telegram/test" \
+  -H "Authorization: Bearer $API_KEY"
+```
+
 Ручной запуск недельного тематического дайджеста:
 ```bash
 curl -X POST "$API_BASE_URL/jobs/weekly-digest/run" \

@@ -1099,6 +1099,40 @@ async def run_weekly_digest_job(request_data: dict, auth: bool = Depends(verify_
     return await job.run(dry_run=dry_run, publish=publish)
 
 
+@app.post("/telegram/validate")
+async def validate_telegram_configuration(auth: bool = Depends(verify_api_key)):
+    """Validate Telegram publisher credentials without sending a message."""
+    from publisher import TelegramPublisher
+
+    publisher = TelegramPublisher()
+    ok, message = publisher.validate_configuration()
+    return {
+        "status": "ok" if ok else "error",
+        "configured": ok,
+        "message": message,
+    }
+
+
+@app.post("/telegram/test")
+async def send_telegram_test_message(auth: bool = Depends(verify_api_key)):
+    """Send a short test message to the configured Telegram chat/channel."""
+    from publisher import TelegramPublisher
+
+    publisher = TelegramPublisher()
+    ok, message = publisher.validate_configuration()
+    if not ok:
+        raise HTTPException(status_code=503, detail=message)
+
+    sent = publisher.send_test_message()
+    if not sent:
+        raise HTTPException(status_code=502, detail="Telegram test message was not sent")
+
+    return {
+        "status": "sent",
+        "message": "Telegram test message sent",
+    }
+
+
 @app.post("/jobs/source-metrics/register")
 async def register_source_metrics_job(request_data: dict, auth: bool = Depends(verify_api_key)):
     """Register existing article source URLs for later engagement checks."""
