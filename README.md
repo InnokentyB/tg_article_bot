@@ -53,14 +53,14 @@ REVIEW_GENERATOR_PROVIDER="fake" # 'fake' или 'openai'
 ```
 
 ### 1.1. Ежедневный дайджест
-API умеет собирать ежедневный редакционный дайджест: 5 лучших статей за последние 3 дня, одну статью дня и критический разбор для канала «Читатель Use Case».
+API умеет собирать ежедневный редакционный дайджест: 7 лучших статей за последние 3 дня, одну отдельную статью дня и критический разбор для канала «Читатель Use Case».
 
 Ручной безопасный запуск без публикации:
 ```bash
 curl -X POST "$API_BASE_URL/jobs/daily-digest/run" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"dry_run": true, "period_days": 3, "max_articles": 5}'
+  -d '{"dry_run": true, "period_days": 3, "max_articles": 7}'
 ```
 
 Автозапуск и публикация управляются отдельно:

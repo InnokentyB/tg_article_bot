@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DailyDigestConfig:
     period_days: int = 3
-    max_articles: int = 5
+    max_articles: int = 7
     topic: str = "AI agents, knowledge bases, requirements, product and engineering practice"
     language: Optional[str] = None
     publish_enabled: bool = False
@@ -28,7 +28,7 @@ class DailyDigestConfig:
     def from_env(cls) -> "DailyDigestConfig":
         return cls(
             period_days=int(os.getenv("DAILY_DIGEST_PERIOD_DAYS", "3")),
-            max_articles=int(os.getenv("DAILY_DIGEST_MAX_ARTICLES", "5")),
+            max_articles=int(os.getenv("DAILY_DIGEST_MAX_ARTICLES", "7")),
             topic=os.getenv(
                 "DAILY_DIGEST_TOPIC",
                 "AI agents, knowledge bases, requirements, product and engineering practice",
@@ -440,7 +440,7 @@ class DailyDigestJob:
             f"Читатель Use Case: дайджест за {self._config.period_days} дня",
             f"Дата отбора: {digest_date.isoformat()}",
             "",
-            "5 лучших материалов:",
+            f"{len(ranked_articles)} лучших материалов:",
         ]
         for index, article in enumerate(ranked_articles, start=1):
             title = article.get("title") or "Без названия"
