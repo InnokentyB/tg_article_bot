@@ -73,25 +73,28 @@ def test_daily_digest_messages_split_top_five_and_best_review() -> None:
     )
     ranked = [
         _candidate(index, f"Article {index}", text="AI agents " * 300)
-        for index in range(1, 6)
+        for index in range(1, 7)
     ]
     for article in ranked:
         article["digest_score"] = 5.0
         article["selection_reason"] = "test"
 
+    best_article = ranked[0]
+    digest_articles = ranked[1:6]
     digest_message = job._build_digest_telegram_message(
         digest_date=datetime(2026, 7, 24, tzinfo=timezone.utc).date(),
-        ranked_articles=ranked,
+        ranked_articles=digest_articles,
     )
     review_message = job._build_review_telegram_message(
         digest_date=datetime(2026, 7, 24, tzinfo=timezone.utc).date(),
-        best_article=ranked[0],
+        best_article=best_article,
         best_review="Критический разбор лучшей статьи.",
     )
 
     assert "5 лучших материалов" in digest_message
-    assert "1. Article 1" in digest_message
-    assert "5. Article 5" in digest_message
+    assert "Article 1" not in digest_message
+    assert "1. Article 2" in digest_message
+    assert "5. Article 6" in digest_message
     assert "Критический разбор лучшей статьи." not in digest_message
     assert "статья дня" in review_message
     assert "Article 1" in review_message

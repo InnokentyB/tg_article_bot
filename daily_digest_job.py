@@ -97,7 +97,7 @@ class DailyDigestJob:
             }
 
         candidates = await self._load_recent_candidates(now)
-        ranked_articles = self._rank_candidates(candidates)[: self._config.max_articles]
+        ranked_articles = self._rank_candidates(candidates)
         if not ranked_articles:
             return {
                 "status": "skipped",
@@ -106,10 +106,11 @@ class DailyDigestJob:
             }
 
         best_article = ranked_articles[0]
+        digest_articles = ranked_articles[1 : self._config.max_articles + 1]
         generated = await self._generate_best_article_review(best_article)
         digest_message = self._build_digest_telegram_message(
             digest_date=digest_date,
-            ranked_articles=ranked_articles,
+            ranked_articles=digest_articles,
         )
         review_message = self._build_review_telegram_message(
             digest_date=digest_date,
@@ -125,7 +126,7 @@ class DailyDigestJob:
         if not dry_run:
             review_id = await self._store_review(
                 digest_date=digest_date,
-                ranked_articles=ranked_articles,
+                ranked_articles=[best_article, *digest_articles],
                 best_article=best_article,
                 generated=generated,
                 telegram_message=telegram_message,
@@ -150,7 +151,7 @@ class DailyDigestJob:
             "publish_requested": publish,
             "published": published,
             "best_article": self._public_article(best_article),
-            "digest_articles": [self._public_article(article) for article in ranked_articles],
+            "digest_articles": [self._public_article(article) for article in digest_articles],
             "telegram_message": telegram_message,
             "digest_message": digest_message,
             "review_message": review_message,
