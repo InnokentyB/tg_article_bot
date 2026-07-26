@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DailyDigestConfig:
     period_days: int = 3
-    max_articles: int = 7
+    max_articles: int = 5
     topic: str = "AI agents, knowledge bases, requirements, product and engineering practice"
     language: Optional[str] = None
     publish_enabled: bool = False
@@ -28,7 +28,7 @@ class DailyDigestConfig:
     def from_env(cls) -> "DailyDigestConfig":
         return cls(
             period_days=int(os.getenv("DAILY_DIGEST_PERIOD_DAYS", "3")),
-            max_articles=int(os.getenv("DAILY_DIGEST_MAX_ARTICLES", "7")),
+            max_articles=int(os.getenv("DAILY_DIGEST_MAX_ARTICLES", "5")),
             topic=os.getenv(
                 "DAILY_DIGEST_TOPIC",
                 "AI agents, knowledge bases, requirements, product and engineering practice",
@@ -445,12 +445,27 @@ class DailyDigestJob:
         for index, article in enumerate(ranked_articles, start=1):
             title = article.get("title") or "Без названия"
             url = article.get("canonical_url") or article.get("original_link") or article.get("source") or ""
+            source = article.get("source_name") or article.get("source")
+            note = self._digest_article_note(article)
             lines.append(f"{index}. {title}")
+            if source:
+                lines.append(f"Источник: {source}")
+            if note:
+                lines.append(f"Коротко: {note}")
             if url:
                 lines.append(url)
+            lines.append("")
 
         lines.extend(["", "Разбор статьи дня выйдет отдельным постом."])
         return "\n".join(line for line in lines if line is not None).strip()
+
+    @classmethod
+    def _digest_article_note(cls, article: dict[str, Any], limit: int = 280) -> str:
+        text = article.get("summary") or cls._preview(article)
+        text = " ".join(str(text or "").split())
+        if len(text) <= limit:
+            return text
+        return text[: limit - 1].rstrip() + "…"
 
     def _build_review_telegram_message(
         self,
