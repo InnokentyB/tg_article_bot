@@ -31,7 +31,10 @@ async def publish_once(args: argparse.Namespace) -> None:
         result = await job.run(dry_run=True, publish=False)
 
         if args.publish:
-            published = job._publish_message(result["telegram_message"])
+            published = await job._publish_daily_messages(
+                digest_message=result["digest_message"],
+                review_message=result["review_message"],
+            )
             if not published:
                 raise RuntimeError("Telegram publication failed")
         else:
@@ -58,6 +61,9 @@ async def publish_once(args: argparse.Namespace) -> None:
                         "generator": "openai-critical-review-v1",
                         "published_via": "manual_openai_first_run",
                         "publish_requested": args.publish,
+                        "telegram_posting": "split_digest_and_review",
+                        "digest_message": result["digest_message"],
+                        "review_message": result["review_message"],
                     }
                 ),
                 result["digest_date"],

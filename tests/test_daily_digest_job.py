@@ -66,7 +66,7 @@ def test_daily_digest_ranks_substantial_tier_one_embedded_articles() -> None:
     assert "tier-1 source" in ranked[0]["selection_reason"]
 
 
-def test_daily_digest_message_contains_top_five_and_best_review() -> None:
+def test_daily_digest_messages_split_top_five_and_best_review() -> None:
     job = DailyDigestJob(
         db_manager=object(),
         config=DailyDigestConfig(period_days=3, max_articles=5),
@@ -79,18 +79,23 @@ def test_daily_digest_message_contains_top_five_and_best_review() -> None:
         article["digest_score"] = 5.0
         article["selection_reason"] = "test"
 
-    message = job._build_telegram_message(
+    digest_message = job._build_digest_telegram_message(
         digest_date=datetime(2026, 7, 24, tzinfo=timezone.utc).date(),
         ranked_articles=ranked,
+    )
+    review_message = job._build_review_telegram_message(
+        digest_date=datetime(2026, 7, 24, tzinfo=timezone.utc).date(),
         best_article=ranked[0],
         best_review="Критический разбор лучшей статьи.",
     )
 
-    assert "5 лучших материалов" in message
-    assert "1. Article 1" in message
-    assert "5. Article 5" in message
-    assert "Статья дня" in message
-    assert "Критический разбор лучшей статьи." in message
+    assert "5 лучших материалов" in digest_message
+    assert "1. Article 1" in digest_message
+    assert "5. Article 5" in digest_message
+    assert "Критический разбор лучшей статьи." not in digest_message
+    assert "статья дня" in review_message
+    assert "Article 1" in review_message
+    assert "Критический разбор лучшей статьи." in review_message
 
 
 def test_daily_digest_filters_historical_backfill_by_url_date() -> None:

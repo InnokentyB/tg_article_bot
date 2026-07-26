@@ -68,6 +68,7 @@ curl -X POST "$API_BASE_URL/jobs/daily-digest/run" \
 DAILY_DIGEST_ENABLED=false
 DAILY_DIGEST_RUN_AT=09:00
 DAILY_DIGEST_PUBLISH_ENABLED=false
+DAILY_DIGEST_REVIEW_PUBLISH_DELAY_SECONDS=0
 WEEKLY_DIGEST_ENABLED=false
 WEEKLY_DIGEST_RUN_AT=10:00
 WEEKLY_DIGEST_WEEKDAY=0
@@ -76,6 +77,10 @@ WEEKLY_DIGEST_PUBLISH_ENABLED=false
 TELEGRAM_TOKEN="your_bot_token"
 TELEGRAM_CHAT_ID="your_channel_id"
 ```
+
+Daily digest при публикации уходит двумя Telegram-постами: сначала список лучших материалов,
+затем отдельный разбор статьи дня. Задержка перед вторым постом задается
+`DAILY_DIGEST_REVIEW_PUBLISH_DELAY_SECONDS`.
 
 Проверка Telegram перед реальной публикацией:
 ```bash

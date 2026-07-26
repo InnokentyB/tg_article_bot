@@ -22,6 +22,7 @@ class DailyDigestConfig:
     topic: str = "AI agents, knowledge bases, requirements, product and engineering practice"
     language: Optional[str] = None
     publish_enabled: bool = False
+    review_publish_delay_seconds: int = 0
 
     @classmethod
     def from_env(cls) -> "DailyDigestConfig":
@@ -34,6 +35,10 @@ class DailyDigestConfig:
             ),
             language=os.getenv("DAILY_DIGEST_LANGUAGE") or None,
             publish_enabled=os.getenv("DAILY_DIGEST_PUBLISH_ENABLED", "false").lower() == "true",
+            review_publish_delay_seconds=max(
+                0,
+                int(os.getenv("DAILY_DIGEST_REVIEW_PUBLISH_DELAY_SECONDS", "0")),
+            ),
         )
 
 
@@ -102,11 +107,18 @@ class DailyDigestJob:
 
         best_article = ranked_articles[0]
         generated = await self._generate_best_article_review(best_article)
-        telegram_message = self._build_telegram_message(
+        digest_message = self._build_digest_telegram_message(
             digest_date=digest_date,
             ranked_articles=ranked_articles,
+        )
+        review_message = self._build_review_telegram_message(
+            digest_date=digest_date,
             best_article=best_article,
             best_review=generated["telegram_draft"],
+        )
+        telegram_message = self._build_telegram_message(
+            digest_message=digest_message,
+            review_message=review_message,
         )
 
         review_id = None
@@ -117,15 +129,16 @@ class DailyDigestJob:
                 best_article=best_article,
                 generated=generated,
                 telegram_message=telegram_message,
+                digest_message=digest_message,
+                review_message=review_message,
                 publish=publish,
             )
 
         published = False
         if publish and not dry_run:
-            published = await asyncio.get_running_loop().run_in_executor(
-                None,
-                self._publish_message,
-                telegram_message,
+            published = await self._publish_daily_messages(
+                digest_message=digest_message,
+                review_message=review_message,
             )
 
         return {
@@ -139,6 +152,8 @@ class DailyDigestJob:
             "best_article": self._public_article(best_article),
             "digest_articles": [self._public_article(article) for article in ranked_articles],
             "telegram_message": telegram_message,
+            "digest_message": digest_message,
+            "review_message": review_message,
             "review_markdown": generated["review_markdown"],
         }
 
@@ -354,6 +369,8 @@ class DailyDigestJob:
         best_article: dict[str, Any],
         generated: dict[str, str],
         telegram_message: str,
+        digest_message: str,
+        review_message: str,
         publish: bool,
     ) -> int:
         topic_query_id = await self._db.create_topic_query(
@@ -390,6 +407,10 @@ class DailyDigestJob:
                 "best_article_id": best_article["article_id"],
                 "generator": generated.get("generator"),
                 "publish_requested": publish,
+                "telegram_posting": "split_digest_and_review",
+                "review_publish_delay_seconds": self._config.review_publish_delay_seconds,
+                "digest_message": digest_message,
+                "review_message": review_message,
             },
         )
 
@@ -408,13 +429,11 @@ class DailyDigestJob:
                 )
             )
 
-    def _build_telegram_message(
+    def _build_digest_telegram_message(
         self,
         *,
         digest_date: date,
         ranked_articles: list[dict[str, Any]],
-        best_article: dict[str, Any],
-        best_review: str,
     ) -> str:
         lines = [
             f"Читатель Use Case: дайджест за {self._config.period_days} дня",
@@ -429,18 +448,39 @@ class DailyDigestJob:
             if url:
                 lines.append(url)
 
-        lines.extend(
-            [
-                "",
-                "Статья дня:",
-                best_article.get("title") or "Без названия",
-                best_article.get("canonical_url") or best_article.get("original_link") or "",
-                "",
-                "Разбор:",
-                best_review,
-            ]
-        )
+        lines.extend(["", "Разбор статьи дня выйдет отдельным постом."])
         return "\n".join(line for line in lines if line is not None).strip()
+
+    def _build_review_telegram_message(
+        self,
+        *,
+        digest_date: date,
+        best_article: dict[str, Any],
+        best_review: str,
+    ) -> str:
+        lines = [
+            "Читатель Use Case: статья дня",
+            f"Дата отбора: {digest_date.isoformat()}",
+            "",
+            best_article.get("title") or "Без названия",
+            best_article.get("canonical_url") or best_article.get("original_link") or "",
+            "",
+            "Разбор:",
+            best_review,
+        ]
+        return "\n".join(line for line in lines if line is not None).strip()
+
+    @staticmethod
+    def _build_telegram_message(*, digest_message: str, review_message: str) -> str:
+        return f"{digest_message}\n\n{review_message}".strip()
+
+    async def _publish_daily_messages(self, *, digest_message: str, review_message: str) -> bool:
+        loop = asyncio.get_running_loop()
+        digest_ok = await loop.run_in_executor(None, self._publish_message, digest_message)
+        if self._config.review_publish_delay_seconds:
+            await asyncio.sleep(self._config.review_publish_delay_seconds)
+        review_ok = await loop.run_in_executor(None, self._publish_message, review_message)
+        return digest_ok and review_ok
 
     def _publish_message(self, message: str) -> bool:
         from publisher import TelegramPublisher
