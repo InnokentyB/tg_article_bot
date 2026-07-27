@@ -78,6 +78,7 @@ def test_daily_digest_messages_split_top_five_and_best_review() -> None:
     for article in ranked:
         article["digest_score"] = 5.0
         article["selection_reason"] = "test"
+        article["digest_note"] = "Русское пояснение для дайджеста."
 
     best_article = ranked[0]
     digest_articles = ranked[1:6]
@@ -95,9 +96,13 @@ def test_daily_digest_messages_split_top_five_and_best_review() -> None:
     assert "Article 1" not in digest_message
     assert "1. Article 2" in digest_message
     assert "5. Article 6" in digest_message
-    assert "Коротко: Useful summary" in digest_message
+    assert "Дата отбора" not in digest_message
+    assert "Источник:" not in digest_message
+    assert "Разбор статьи дня выйдет отдельным постом" not in digest_message
+    assert "Коротко: Русское пояснение для дайджеста." in digest_message
     assert "Критический разбор лучшей статьи." not in digest_message
     assert "статья дня" in review_message
+    assert "Дата отбора" not in review_message
     assert "Article 1" in review_message
     assert "Критический разбор лучшей статьи." in review_message
 

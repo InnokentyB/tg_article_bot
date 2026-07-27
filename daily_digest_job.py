@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import logging
 import os
 import re
@@ -107,6 +108,7 @@ class DailyDigestJob:
 
         best_article = ranked_articles[0]
         digest_articles = ranked_articles[1 : self._config.max_articles + 1]
+        digest_articles = await self._generate_digest_article_notes(digest_articles)
         generated = await self._generate_best_article_review(best_article)
         digest_message = self._build_digest_telegram_message(
             digest_date=digest_date,
@@ -438,30 +440,103 @@ class DailyDigestJob:
     ) -> str:
         lines = [
             f"Читатель Use Case: дайджест за {self._config.period_days} дня",
-            f"Дата отбора: {digest_date.isoformat()}",
             "",
             f"{len(ranked_articles)} лучших материалов:",
         ]
         for index, article in enumerate(ranked_articles, start=1):
             title = article.get("title") or "Без названия"
             url = article.get("canonical_url") or article.get("original_link") or article.get("source") or ""
-            source = article.get("source_name") or article.get("source")
             note = self._digest_article_note(article)
             lines.append(f"{index}. {title}")
-            if source:
-                lines.append(f"Источник: {source}")
             if note:
                 lines.append(f"Коротко: {note}")
             if url:
                 lines.append(url)
             lines.append("")
 
-        lines.extend(["", "Разбор статьи дня выйдет отдельным постом."])
         return "\n".join(line for line in lines if line is not None).strip()
+
+    async def _generate_digest_article_notes(self, articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not articles or os.getenv("REVIEW_GENERATOR_PROVIDER", "fake").lower() != "openai":
+            return articles
+
+        try:
+            from openai import AsyncOpenAI
+        except ImportError:
+            logger.warning("openai package is not installed; digest notes will use source summaries")
+            return articles
+
+        client_kwargs = {}
+        if os.getenv("OPENAI_BASE_URL"):
+            client_kwargs["base_url"] = os.getenv("OPENAI_BASE_URL")
+
+        payload = [
+            {
+                "article_id": article.get("article_id"),
+                "title": article.get("title"),
+                "summary": article.get("summary"),
+                "preview": self._preview(article),
+            }
+            for article in articles
+        ]
+
+        try:
+            response = await AsyncOpenAI(**client_kwargs).chat.completions.create(
+                model=os.getenv("OPENAI_REVIEW_MODEL", "gpt-5.4-mini"),
+                temperature=float(os.getenv("OPENAI_REVIEW_TEMPERATURE", "0.3")),
+                response_format={"type": "json_object"},
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Ты редактор Telegram-канала 'Читатель Use Case'. "
+                            "Для каждой статьи дай короткое пояснение на русском: "
+                            "о чем материал и почему он может быть полезен практику. "
+                            "Не пересказывай источник, не используй рекламный тон, не пиши название источника. "
+                            "Ограничение: 1-2 предложения, до 260 символов на статью."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "articles": payload,
+                                "output_contract": {
+                                    "notes": [
+                                        {
+                                            "article_id": "integer",
+                                            "note": "short Russian text",
+                                        }
+                                    ]
+                                },
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                ],
+            )
+            parsed = json.loads(response.choices[0].message.content or "{}")
+            notes = {
+                int(item["article_id"]): str(item.get("note") or "").strip()
+                for item in parsed.get("notes", [])
+                if item.get("article_id") is not None
+            }
+        except Exception as exc:
+            logger.warning("Failed to generate Russian digest notes: %s", exc)
+            return articles
+
+        enriched = []
+        for article in articles:
+            copied = dict(article)
+            note = notes.get(int(article.get("article_id") or 0))
+            if note:
+                copied["digest_note"] = note
+            enriched.append(copied)
+        return enriched
 
     @classmethod
     def _digest_article_note(cls, article: dict[str, Any], limit: int = 280) -> str:
-        text = article.get("summary") or cls._preview(article)
+        text = article.get("digest_note") or article.get("summary") or cls._preview(article)
         text = " ".join(str(text or "").split())
         if len(text) <= limit:
             return text
@@ -476,7 +551,6 @@ class DailyDigestJob:
     ) -> str:
         lines = [
             "Читатель Use Case: статья дня",
-            f"Дата отбора: {digest_date.isoformat()}",
             "",
             best_article.get("title") or "Без названия",
             best_article.get("canonical_url") or best_article.get("original_link") or "",
