@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import types
 import sys
 from pathlib import Path
@@ -146,15 +147,17 @@ def test_rss_worker_ingests_docs_collection_entries(monkeypatch) -> None:
                 "url": "https://developers.openai.com/cookbook",
                 "source_type": "docs_collection",
                 "language": "en",
-                "metadata": {
-                    "entry_urls": [
-                        {
-                            "title": "OpenAI Cookbook",
-                            "url": "https://developers.openai.com/cookbook",
-                            "summary": "Official recipes.",
-                        }
-                    ]
-                },
+                "metadata": json.dumps(
+                    {
+                        "entry_urls": [
+                            {
+                                "title": "OpenAI Cookbook",
+                                "url": "https://developers.openai.com/cookbook",
+                                "summary": "Official recipes.",
+                            }
+                        ]
+                    }
+                ),
             }
         )
 

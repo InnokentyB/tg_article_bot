@@ -11,6 +11,7 @@ Configuration (environment variables):
     WORKER_FETCH_LIMIT   – Max RSS entries to ingest per source per crawl (default: 20).
 """
 import asyncio
+import json
 import logging
 import os
 from urllib.parse import urljoin, urlparse
@@ -410,7 +411,7 @@ class RSSWorker:
         source_id: int = source["id"]
         source_name: str = source.get("name", "")
         language: Optional[str] = source.get("language")
-        metadata = source.get("metadata") or {}
+        metadata = self._metadata_dict(source.get("metadata"))
         entry_urls = metadata.get("entry_urls") or []
 
         entries = [
@@ -445,6 +446,18 @@ class RSSWorker:
             len(entries),
         )
         await self._ingest_entries(source_id, source_name, language, entries, "docs_collection_worker")
+
+    @staticmethod
+    def _metadata_dict(metadata) -> dict:
+        if isinstance(metadata, dict):
+            return metadata
+        if isinstance(metadata, str):
+            try:
+                parsed = json.loads(metadata)
+            except json.JSONDecodeError:
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
+        return {}
 
     async def _ingest_entries(
         self,
