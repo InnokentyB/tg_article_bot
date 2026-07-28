@@ -492,6 +492,7 @@ class DailyDigestJob:
                             "Ты редактор Telegram-канала 'Читатель Use Case'. "
                             "Для каждой статьи дай короткое пояснение на русском: "
                             "о чем материал и почему он может быть полезен практику. "
+                            "Ответ верни строго как json-объект. "
                             "Верни note для каждого article_id. Пиши только по-русски; "
                             "английские слова оставляй только для неизбежных терминов вроде RAG, API, SDK. "
                             "Не пересказывай источник, не используй рекламный тон, не пиши название источника. "
@@ -556,7 +557,7 @@ class DailyDigestJob:
 
     @staticmethod
     def _fallback_digest_note(article: dict[str, Any]) -> str:
-        source_metadata = article.get("source_metadata") or {}
+        source_metadata = DailyDigestJob._metadata_dict(article.get("source_metadata"))
         topics = source_metadata.get("topics") or []
         if isinstance(topics, list) and topics:
             topic_text = ", ".join(str(topic).replace("_", " ") for topic in topics[:3])
@@ -568,6 +569,18 @@ class DailyDigestJob:
             "Материал стоит прочитать как практический ориентир: он помогает оценить подход, "
             "ограничения и применимость идеи для продукта, команды или инженерной практики."
         )
+
+    @staticmethod
+    def _metadata_dict(metadata) -> dict:
+        if isinstance(metadata, dict):
+            return metadata
+        if isinstance(metadata, str):
+            try:
+                parsed = json.loads(metadata)
+            except json.JSONDecodeError:
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
+        return {}
 
     def _build_review_telegram_message(
         self,

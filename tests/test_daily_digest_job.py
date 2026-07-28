@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from daily_digest_job import (
@@ -113,7 +114,7 @@ def test_daily_digest_note_never_falls_back_to_english_summary() -> None:
         "English source",
         text="This is a long English article about AI engineering." * 50,
         summary="This English summary must not leak into the Telegram digest.",
-        source_metadata={"topics": ["ai_engineering", "product"]},
+        source_metadata=json.dumps({"topics": ["ai_engineering", "product"]}),
     )
 
     note = DailyDigestJob._digest_article_note(article)
