@@ -107,6 +107,22 @@ def test_daily_digest_messages_split_top_five_and_best_review() -> None:
     assert "Критический разбор лучшей статьи." in review_message
 
 
+def test_daily_digest_note_never_falls_back_to_english_summary() -> None:
+    article = _candidate(
+        2,
+        "English source",
+        text="This is a long English article about AI engineering." * 50,
+        summary="This English summary must not leak into the Telegram digest.",
+        source_metadata={"topics": ["ai_engineering", "product"]},
+    )
+
+    note = DailyDigestJob._digest_article_note(article)
+
+    assert "This English summary" not in note
+    assert "Материал стоит прочитать" in note
+    assert DailyDigestJob._is_russian_enough(note)
+
+
 def test_daily_digest_filters_historical_backfill_by_url_date() -> None:
     job = DailyDigestJob(
         db_manager=object(),

@@ -492,6 +492,8 @@ class DailyDigestJob:
                             "Ты редактор Telegram-канала 'Читатель Use Case'. "
                             "Для каждой статьи дай короткое пояснение на русском: "
                             "о чем материал и почему он может быть полезен практику. "
+                            "Верни note для каждого article_id. Пиши только по-русски; "
+                            "английские слова оставляй только для неизбежных терминов вроде RAG, API, SDK. "
                             "Не пересказывай источник, не используй рекламный тон, не пиши название источника. "
                             "Ограничение: 1-2 предложения, до 260 символов на статью."
                         ),
@@ -529,7 +531,7 @@ class DailyDigestJob:
         for article in articles:
             copied = dict(article)
             note = notes.get(int(article.get("article_id") or 0))
-            if note:
+            if note and self._is_russian_enough(note):
                 copied["digest_note"] = note
             enriched.append(copied)
         return enriched
@@ -538,9 +540,34 @@ class DailyDigestJob:
     def _digest_article_note(cls, article: dict[str, Any], limit: int = 280) -> str:
         text = article.get("digest_note") or article.get("summary") or cls._preview(article)
         text = " ".join(str(text or "").split())
+        if not cls._is_russian_enough(text):
+            text = cls._fallback_digest_note(article)
         if len(text) <= limit:
             return text
         return text[: limit - 1].rstrip() + "…"
+
+    @staticmethod
+    def _is_russian_enough(text: str) -> bool:
+        letters = [char for char in text if char.isalpha()]
+        if not letters:
+            return False
+        cyrillic_count = sum("а" <= char.lower() <= "я" or char.lower() == "ё" for char in letters)
+        return cyrillic_count >= 12 or (cyrillic_count / len(letters)) >= 0.35
+
+    @staticmethod
+    def _fallback_digest_note(article: dict[str, Any]) -> str:
+        source_metadata = article.get("source_metadata") or {}
+        topics = source_metadata.get("topics") or []
+        if isinstance(topics, list) and topics:
+            topic_text = ", ".join(str(topic).replace("_", " ") for topic in topics[:3])
+            return (
+                "Материал стоит прочитать как практический ориентир по теме "
+                f"{topic_text}: он помогает оценить подход, ограничения и применимость для продукта или команды."
+            )
+        return (
+            "Материал стоит прочитать как практический ориентир: он помогает оценить подход, "
+            "ограничения и применимость идеи для продукта, команды или инженерной практики."
+        )
 
     def _build_review_telegram_message(
         self,
