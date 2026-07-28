@@ -54,6 +54,7 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
                 {"id": 4, "name": "Modern Analyst", "source_type": "modernanalyst_html"},
                 {"id": 5, "name": "Mind the Product", "source_type": "mindtheproduct_json"},
                 {"id": 6, "name": "IREB", "source_type": "ireb_html"},
+                {"id": 7, "name": "Docs", "source_type": "docs_collection"},
             ]
 
     async def run() -> None:
@@ -66,7 +67,7 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
         worker._fetch_source = fake_fetch_source
         await worker._poll_once()
 
-        assert fetched == [2, 4, 5, 6]
+        assert fetched == [2, 4, 5, 6, 7]
 
     asyncio.run(run())
 
@@ -116,6 +117,64 @@ def test_rss_worker_passes_source_id_to_ingestion(monkeypatch) -> None:
     asyncio.run(run())
 
     assert captured_payloads[0]["source_id"] == 42
+
+
+def test_rss_worker_ingests_docs_collection_entries(monkeypatch) -> None:
+    monkeypatch.setenv("WORKER_ENABLED", "true")
+
+    class FakeDB:
+        def __init__(self) -> None:
+            self.updated_source_id = None
+
+        async def update_source_last_fetched(self, source_id: int) -> None:
+            self.updated_source_id = source_id
+
+    captured_payloads = []
+
+    async def fake_ingest_fn(payload: dict) -> dict:
+        captured_payloads.append(payload)
+        return {"status": "created"}
+
+    async def run() -> None:
+        db = FakeDB()
+        worker = RSSWorker(db_manager=db, ingest_fn=fake_ingest_fn)
+
+        await worker._fetch_source(
+            {
+                "id": 77,
+                "name": "OpenAI Cookbook",
+                "url": "https://developers.openai.com/cookbook",
+                "source_type": "docs_collection",
+                "language": "en",
+                "metadata": {
+                    "entry_urls": [
+                        {
+                            "title": "OpenAI Cookbook",
+                            "url": "https://developers.openai.com/cookbook",
+                            "summary": "Official recipes.",
+                        }
+                    ]
+                },
+            }
+        )
+
+        assert db.updated_source_id == 77
+
+    asyncio.run(run())
+
+    assert captured_payloads == [
+        {
+            "url": "https://developers.openai.com/cookbook",
+            "source_id": 77,
+            "title": "OpenAI Cookbook",
+            "source_name": "OpenAI Cookbook",
+            "source_type": "web",
+            "language": "en",
+            "summary": "Official recipes.",
+            "fallback_text": "OpenAI Cookbook\n\nOfficial recipes.",
+            "ingestion_method": "docs_collection_worker",
+        }
+    ]
 
 
 def test_rss_worker_parses_modernanalyst_article_listing() -> None:

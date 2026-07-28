@@ -99,7 +99,13 @@ class RSSWorker:
             logger.debug("[RSSWorker] No sources due for fetch.")
             return
 
-        supported_source_types = {"rss", "modernanalyst_html", "mindtheproduct_json", "ireb_html"}
+        supported_source_types = {
+            "rss",
+            "modernanalyst_html",
+            "mindtheproduct_json",
+            "ireb_html",
+            "docs_collection",
+        }
         supported_sources = [
             source for source in sources if source.get("source_type") in supported_source_types
         ]
@@ -144,6 +150,9 @@ class RSSWorker:
             return
         if source_type == "ireb_html":
             await self._fetch_ireb_source(source)
+            return
+        if source_type == "docs_collection":
+            await self._fetch_docs_collection_source(source)
             return
 
         logger.info(
@@ -395,6 +404,47 @@ class RSSWorker:
             return
 
         await self._ingest_entries(source_id, source_name, language, entries, "ireb_html_worker")
+
+    async def _fetch_docs_collection_source(self, source: dict) -> None:
+        """Crawl a fixed list of official documentation pages from source metadata."""
+        source_id: int = source["id"]
+        source_name: str = source.get("name", "")
+        language: Optional[str] = source.get("language")
+        metadata = source.get("metadata") or {}
+        entry_urls = metadata.get("entry_urls") or []
+
+        entries = [
+            {
+                "title": item.get("title") or source_name,
+                "link": item.get("url"),
+                "summary": item.get("summary"),
+                "fallback_text": "\n\n".join(
+                    part for part in (item.get("title"), item.get("summary")) if part
+                ),
+            }
+            for item in entry_urls
+            if isinstance(item, dict) and item.get("url")
+        ]
+        if not entries and source.get("url"):
+            entries = [
+                {
+                    "title": source_name,
+                    "link": source["url"],
+                    "summary": metadata.get("editorial_role"),
+                    "fallback_text": "\n\n".join(
+                        part for part in (source_name, metadata.get("editorial_role")) if part
+                    ),
+                }
+            ]
+
+        entries = entries[: self._fetch_limit]
+        logger.info(
+            "[RSSWorker] Crawling docs collection source_id=%d name=%r entries=%d",
+            source_id,
+            source_name,
+            len(entries),
+        )
+        await self._ingest_entries(source_id, source_name, language, entries, "docs_collection_worker")
 
     async def _ingest_entries(
         self,

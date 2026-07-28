@@ -217,6 +217,69 @@ INSERT INTO sources (
     24,
     TRUE,
     '{"tier": 1, "topics": ["requirements", "business_analysis", "product", "quality"], "trust_level": "expert_community", "noise_risk": "low", "bias": "professional_community", "editorial_role": "requirements engineering, elicitation, business analysis, validation, and AI-in-RE practice"}'
+  ),
+  (
+    'OpenAI Cookbook',
+    'https://developers.openai.com/cookbook',
+    'docs_collection',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["ai", "llm", "agents", "rag", "evaluation"], "trust_level": "primary", "noise_risk": "low", "bias": "vendor", "editorial_role": "official OpenAI implementation recipes, patterns, evals, RAG, agents, and multimodal examples", "entry_urls": [{"title": "OpenAI Cookbook", "url": "https://developers.openai.com/cookbook", "summary": "Official OpenAI implementation examples and recipes."}]}'
+  ),
+  (
+    'Anthropic Prompt Engineering Guide',
+    'https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview',
+    'docs_collection',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["ai", "llm", "prompt_engineering", "evaluation"], "trust_level": "primary", "noise_risk": "low", "bias": "vendor", "editorial_role": "official Anthropic guidance on prompt engineering, evaluation discipline, and Claude implementation practice", "entry_urls": [{"title": "Anthropic Prompt Engineering Guide", "url": "https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview", "summary": "Official Claude prompt engineering overview."}]}'
+  ),
+  (
+    'Google AI for Developers',
+    'https://ai.google.dev/',
+    'docs_collection',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["ai", "gemini", "multimodal", "developer_tools"], "trust_level": "primary", "noise_risk": "medium", "bias": "vendor", "editorial_role": "official Gemini, Gemma, Google AI API, and multimodal developer documentation", "entry_urls": [{"title": "Google AI for Developers", "url": "https://ai.google.dev/", "summary": "Official Google AI developer documentation hub."}]}'
+  ),
+  (
+    'LangChain Agents Documentation',
+    'https://docs.langchain.com/',
+    'docs_collection',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["ai", "agents", "orchestration", "llm_apps"], "trust_level": "primary", "noise_risk": "medium", "bias": "vendor_open_source", "editorial_role": "official LangChain agent orchestration documentation and implementation patterns", "entry_urls": [{"title": "LangChain Agents", "url": "https://docs.langchain.com/oss/python/langchain/agents", "summary": "Official LangChain agents documentation."}]}'
+  ),
+  (
+    'Model Context Protocol Documentation',
+    'https://modelcontextprotocol.io/docs/getting-started/intro',
+    'docs_collection',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["ai", "agents", "tools", "integration", "mcp"], "trust_level": "primary", "noise_risk": "low", "bias": "standard", "editorial_role": "official MCP standard documentation for connecting AI systems to tools and context", "entry_urls": [{"title": "Model Context Protocol Introduction", "url": "https://modelcontextprotocol.io/docs/getting-started/intro", "summary": "Official MCP introduction and getting started documentation."}]}'
+  ),
+  (
+    'Vercel AI SDK Documentation',
+    'https://ai-sdk.dev/docs/introduction',
+    'docs_collection',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["ai", "typescript", "web_apps", "developer_tools"], "trust_level": "primary", "noise_risk": "medium", "bias": "vendor", "editorial_role": "official Vercel AI SDK documentation for TypeScript and web AI applications", "entry_urls": [{"title": "Vercel AI SDK Introduction", "url": "https://ai-sdk.dev/docs/introduction", "summary": "Official Vercel AI SDK introduction."}]}'
+  ),
+  (
+    'ElevenLabs API Documentation',
+    'https://elevenlabs.io/docs',
+    'docs_collection',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["ai", "voice", "speech", "agents", "audio"], "trust_level": "primary", "noise_risk": "medium", "bias": "vendor", "editorial_role": "official ElevenLabs documentation for voice AI, TTS, STT, voice agents, and audio workflows", "entry_urls": [{"title": "ElevenLabs Documentation", "url": "https://elevenlabs.io/docs", "summary": "Official ElevenLabs API and product documentation."}]}'
   )
 ON CONFLICT (url) DO UPDATE SET
     name = EXCLUDED.name,
