@@ -11,12 +11,14 @@ import argparse
 import asyncio
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from database import DatabaseManager
 from daily_digest_job import DailyDigestConfig, DailyDigestJob
+from telegram_post_worker import TelegramPostDispatcher
 
 
 async def publish_once(args: argparse.Namespace) -> None:
@@ -29,16 +31,6 @@ async def publish_once(args: argparse.Namespace) -> None:
 
         job = DailyDigestJob(db, config=config)
         result = await job.run(dry_run=True, publish=False)
-
-        if args.publish:
-            published = await job._publish_daily_messages(
-                digest_message=result["digest_message"],
-                review_message=result["review_message"],
-            )
-            if not published:
-                raise RuntimeError("Telegram publication failed")
-        else:
-            published = False
 
         async with db.pool.acquire() as conn:
             review_id = await conn.fetchval(
@@ -69,10 +61,24 @@ async def publish_once(args: argparse.Namespace) -> None:
                 result["digest_date"],
             )
 
+        queued_posts = []
+        published = False
+        if args.publish and review_id:
+            queued_posts = await job._enqueue_daily_messages(
+                review_id=review_id,
+                now=datetime.now(timezone.utc),
+                digest_message=result["digest_message"],
+                review_message=result["review_message"],
+            )
+            published = bool(await TelegramPostDispatcher(db).process_due_posts(limit=10))
+            if not published:
+                raise RuntimeError("Telegram digest publication failed")
+
         print(
             json.dumps(
                 {
                     "published": published,
+                    "queued_telegram_post_ids": queued_posts,
                     "review_id": review_id,
                     "digest_date": result["digest_date"],
                     "best_article_id": result["best_article"]["article_id"],

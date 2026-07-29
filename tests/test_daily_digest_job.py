@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from daily_digest_job import (
     DailyDigestConfig,
@@ -171,6 +171,35 @@ def test_daily_digest_deduplicates_by_canonical_url() -> None:
 
     assert len(ranked) == 1
     assert ranked[0]["article_id"] == 1
+
+
+async def test_daily_digest_enqueues_digest_and_review_posts() -> None:
+    class QueueOnlyDb:
+        def __init__(self) -> None:
+            self.posts = []
+
+        async def enqueue_telegram_post(self, **kwargs):
+            self.posts.append(kwargs)
+            return len(self.posts)
+
+    db = QueueOnlyDb()
+    now = datetime(2026, 7, 29, 9, 0, tzinfo=timezone.utc)
+    job = DailyDigestJob(
+        db_manager=db,
+        config=DailyDigestConfig(review_publish_delay_seconds=4 * 60 * 60),
+    )
+
+    post_ids = await job._enqueue_daily_messages(
+        review_id=9,
+        now=now,
+        digest_message="Дайджест",
+        review_message="Разбор",
+    )
+
+    assert post_ids == [1, 2]
+    assert [post["post_type"] for post in db.posts] == ["daily_digest", "daily_review"]
+    assert db.posts[0]["scheduled_at"] == now
+    assert db.posts[1]["scheduled_at"] == now + timedelta(hours=4)
 
 
 def test_weekly_digest_message_contains_topic_and_articles() -> None:

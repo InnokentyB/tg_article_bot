@@ -24,6 +24,7 @@ gmail_worker = None
 daily_digest_worker = None
 weekly_digest_worker = None
 source_metrics_worker = None
+telegram_post_worker = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -75,7 +76,7 @@ async def lifespan(app: FastAPI):
         db_manager = None
 
     # Start background RSS worker (only when DB is available)
-    global rss_worker, gmail_worker, daily_digest_worker, weekly_digest_worker, source_metrics_worker
+    global rss_worker, gmail_worker, daily_digest_worker, weekly_digest_worker, source_metrics_worker, telegram_post_worker
     if db_manager:
         try:
             from rss_worker import RSSWorker
@@ -103,6 +104,15 @@ async def lifespan(app: FastAPI):
         except Exception as digest_err:
             logger.warning(f"⚠️ Daily digest worker failed to start: {digest_err}")
             daily_digest_worker = None
+
+        try:
+            from telegram_post_worker import TelegramPostWorker
+            telegram_post_worker = TelegramPostWorker(db_manager)
+            telegram_post_worker.start()
+            logger.info("✅ Telegram post worker configured")
+        except Exception as telegram_post_err:
+            logger.warning(f"⚠️ Telegram post worker failed to start: {telegram_post_err}")
+            telegram_post_worker = None
 
         try:
             from daily_digest_job import WeeklyDigestWorker
@@ -135,6 +145,9 @@ async def lifespan(app: FastAPI):
     if daily_digest_worker:
         daily_digest_worker.stop()
         logger.info("Daily digest worker stopped")
+    if telegram_post_worker:
+        telegram_post_worker.stop()
+        logger.info("Telegram post worker stopped")
     if weekly_digest_worker:
         weekly_digest_worker.stop()
         logger.info("Weekly digest worker stopped")

@@ -164,6 +164,23 @@ CREATE TABLE IF NOT EXISTS reviews (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Очередь публикаций в Telegram: отдельные посты переживают редеплой сервиса.
+CREATE TABLE IF NOT EXISTS telegram_posts (
+    id SERIAL PRIMARY KEY,
+    review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+    post_type VARCHAR(50) NOT NULL,
+    message TEXT NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'pending',
+    scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    sent_at TIMESTAMP WITH TIME ZONE,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(review_id, post_type)
+);
+
 -- Источники, выбранные для обзора
 CREATE TABLE IF NOT EXISTS review_sources (
     id SERIAL PRIMARY KEY,
@@ -232,6 +249,8 @@ CREATE INDEX IF NOT EXISTS idx_article_embeddings_chunk_model ON article_embeddi
 CREATE INDEX IF NOT EXISTS idx_topic_queries_created_at ON topic_queries(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reviews_status ON reviews(status);
 CREATE INDEX IF NOT EXISTS idx_review_sources_review_id ON review_sources(review_id);
+CREATE INDEX IF NOT EXISTS idx_telegram_posts_due ON telegram_posts(status, scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_telegram_posts_review_id ON telegram_posts(review_id);
 CREATE INDEX IF NOT EXISTS idx_external_source_stats_article_id ON external_source_stats(article_id);
 CREATE INDEX IF NOT EXISTS idx_external_source_stats_next_check ON external_source_stats(next_check_at, tracking_status);
 CREATE INDEX IF NOT EXISTS idx_external_source_snapshots_article_id ON external_source_stat_snapshots(article_id, captured_at DESC);
@@ -264,6 +283,10 @@ CREATE TRIGGER update_sources_updated_at BEFORE UPDATE ON sources
 
 DROP TRIGGER IF EXISTS update_reviews_updated_at ON reviews;
 CREATE TRIGGER update_reviews_updated_at BEFORE UPDATE ON reviews
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_telegram_posts_updated_at ON telegram_posts;
+CREATE TRIGGER update_telegram_posts_updated_at BEFORE UPDATE ON telegram_posts
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 DROP TRIGGER IF EXISTS update_external_source_stats_updated_at ON external_source_stats;

@@ -4,7 +4,6 @@ Daily editorial digest job for Chitatel Use Case.
 from __future__ import annotations
 
 import asyncio
-import html
 import json
 import logging
 import os
@@ -138,11 +137,17 @@ class DailyDigestJob:
             )
 
         published = False
+        queued_posts: list[int] = []
         if publish and not dry_run:
-            published = await self._publish_daily_messages(
+            queued_posts = await self._enqueue_daily_messages(
+                review_id=review_id,
+                now=now,
                 digest_message=digest_message,
                 review_message=review_message,
             )
+            from telegram_post_worker import TelegramPostDispatcher
+
+            published = bool(await TelegramPostDispatcher(self._db).process_due_posts(limit=10))
 
         return {
             "status": "completed",
@@ -152,6 +157,7 @@ class DailyDigestJob:
             "dry_run": dry_run,
             "publish_requested": publish,
             "published": published,
+            "queued_telegram_post_ids": queued_posts,
             "best_article": self._public_article(best_article),
             "digest_articles": [self._public_article(article) for article in digest_articles],
             "telegram_message": telegram_message,
@@ -604,22 +610,39 @@ class DailyDigestJob:
     def _build_telegram_message(*, digest_message: str, review_message: str) -> str:
         return f"{digest_message}\n\n{review_message}".strip()
 
-    async def _publish_daily_messages(self, *, digest_message: str, review_message: str) -> bool:
-        loop = asyncio.get_running_loop()
-        digest_ok = await loop.run_in_executor(None, self._publish_message, digest_message)
-        if self._config.review_publish_delay_seconds:
-            await asyncio.sleep(self._config.review_publish_delay_seconds)
-        review_ok = await loop.run_in_executor(None, self._publish_message, review_message)
-        return digest_ok and review_ok
+    async def _enqueue_daily_messages(
+        self,
+        *,
+        review_id: int,
+        now: datetime,
+        digest_message: str,
+        review_message: str,
+    ) -> list[int]:
+        review_scheduled_at = now + timedelta(seconds=self._config.review_publish_delay_seconds)
+        digest_post_id = await self._db.enqueue_telegram_post(
+            review_id=review_id,
+            post_type="daily_digest",
+            message=digest_message,
+            scheduled_at=now,
+            metadata={"job": "daily_digest", "part": "digest"},
+        )
+        review_post_id = await self._db.enqueue_telegram_post(
+            review_id=review_id,
+            post_type="daily_review",
+            message=review_message,
+            scheduled_at=review_scheduled_at,
+            metadata={
+                "job": "daily_digest",
+                "part": "article_review",
+                "delay_seconds": self._config.review_publish_delay_seconds,
+            },
+        )
+        return [digest_post_id, review_post_id]
 
     def _publish_message(self, message: str) -> bool:
-        from publisher import TelegramPublisher
+        from telegram_post_worker import TelegramPostDispatcher
 
-        publisher = TelegramPublisher()
-        ok = True
-        for chunk in self._split_telegram_message(message):
-            ok = publisher._send_message(html.escape(chunk), parse_mode="HTML") and ok
-        return ok
+        return TelegramPostDispatcher(self._db)._publish_message(message)
 
     @staticmethod
     def _split_telegram_message(message: str, limit: int = 3900) -> list[str]:

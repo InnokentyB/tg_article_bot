@@ -961,3 +961,103 @@ class DatabaseManager:
                     )
 
                 return review_id
+
+    async def enqueue_telegram_post(
+        self,
+        *,
+        review_id: int,
+        post_type: str,
+        message: str,
+        scheduled_at: datetime,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> int:
+        """Create or refresh a scheduled Telegram post."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                """
+                INSERT INTO telegram_posts
+                    (review_id, post_type, message, scheduled_at, status, metadata)
+                VALUES ($1, $2, $3, $4, 'pending', $5::jsonb)
+                ON CONFLICT (review_id, post_type) DO UPDATE SET
+                    message = EXCLUDED.message,
+                    scheduled_at = EXCLUDED.scheduled_at,
+                    status = CASE
+                        WHEN telegram_posts.status = 'sent' THEN telegram_posts.status
+                        ELSE 'pending'
+                    END,
+                    metadata = telegram_posts.metadata || EXCLUDED.metadata,
+                    last_error = NULL
+                RETURNING id
+                """,
+                review_id,
+                post_type,
+                message,
+                scheduled_at,
+                json.dumps(metadata or {}),
+            )
+
+    async def get_due_telegram_posts(self, *, limit: int = 20) -> List[Dict[str, Any]]:
+        """Fetch Telegram posts that are ready to publish."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT id, review_id, post_type, message, scheduled_at, attempts, metadata
+                FROM telegram_posts
+                WHERE status = 'pending'
+                  AND scheduled_at <= NOW()
+                ORDER BY scheduled_at ASC, id ASC
+                LIMIT $1
+                """,
+                limit,
+            )
+            return [dict(row) for row in rows]
+
+    async def mark_telegram_post_sent(self, post_id: int) -> None:
+        """Mark a queued Telegram post as sent."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE telegram_posts
+                SET status = 'sent',
+                    sent_at = NOW(),
+                    last_error = NULL
+                WHERE id = $1
+                """,
+                post_id,
+            )
+
+    async def mark_telegram_post_failed(
+        self,
+        post_id: int,
+        error: str,
+        *,
+        retry_delay_minutes: int = 15,
+        max_attempts: int = 5,
+    ) -> None:
+        """Record a failed Telegram send and retry later while attempts remain."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE telegram_posts
+                SET attempts = attempts + 1,
+                    last_error = $2,
+                    status = CASE WHEN attempts + 1 >= $4 THEN 'failed' ELSE 'pending' END,
+                    scheduled_at = CASE
+                        WHEN attempts + 1 >= $4 THEN scheduled_at
+                        ELSE NOW() + ($3::text || ' minutes')::interval
+                    END
+                WHERE id = $1
+                """,
+                post_id,
+                error[:2000],
+                retry_delay_minutes,
+                max_attempts,
+            )
