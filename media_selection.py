@@ -1,10 +1,14 @@
 """Editorial selection for media links before transcription."""
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import re
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -151,3 +155,43 @@ class MediaSelectionProcessor:
             )
             result["approved" if decision.approved else "rejected"] += 1
         return result
+
+
+class MediaSelectionWorker:
+    """Background loop that reviews discovered media links."""
+
+    def __init__(self, db_manager) -> None:
+        self._enabled = os.getenv("MEDIA_SELECTION_ENABLED", "false").lower() == "true"
+        self._poll_seconds = int(os.getenv("MEDIA_SELECTION_WORKER_POLL_SECONDS", "300"))
+        self._limit = int(os.getenv("MEDIA_SELECTION_WORKER_BATCH_SIZE", "20"))
+        self._task: asyncio.Task | None = None
+        self._processor = MediaSelectionProcessor(db_manager)
+
+    def start(self) -> None:
+        if not self._enabled:
+            logger.info("[MediaSelectionWorker] Disabled via MEDIA_SELECTION_ENABLED=false.")
+            return
+        if self._task and not self._task.done():
+            logger.warning("[MediaSelectionWorker] Already running.")
+            return
+        self._task = asyncio.create_task(self._loop(), name="media_selection_worker")
+        logger.info("[MediaSelectionWorker] Started. poll_seconds=%s", self._poll_seconds)
+
+    def stop(self) -> None:
+        if self._task and not self._task.done():
+            self._task.cancel()
+            logger.info("[MediaSelectionWorker] Cancellation requested.")
+
+    async def _loop(self) -> None:
+        while True:
+            try:
+                result = await self._processor.process_pending(limit=self._limit)
+                if result["reviewed"]:
+                    logger.info("[MediaSelectionWorker] Run result: %s", result)
+                await asyncio.sleep(self._poll_seconds)
+            except asyncio.CancelledError:
+                logger.info("[MediaSelectionWorker] Loop cancelled.")
+                break
+            except Exception as exc:
+                logger.exception("[MediaSelectionWorker] Unexpected error: %s", exc)
+                await asyncio.sleep(self._poll_seconds)

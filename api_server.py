@@ -26,6 +26,7 @@ weekly_digest_worker = None
 source_metrics_worker = None
 telegram_post_worker = None
 media_transcription_worker = None
+media_selection_worker = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -77,7 +78,7 @@ async def lifespan(app: FastAPI):
         db_manager = None
 
     # Start background RSS worker (only when DB is available)
-    global rss_worker, gmail_worker, daily_digest_worker, weekly_digest_worker, source_metrics_worker, telegram_post_worker, media_transcription_worker
+    global rss_worker, gmail_worker, daily_digest_worker, weekly_digest_worker, source_metrics_worker, telegram_post_worker, media_transcription_worker, media_selection_worker
     if db_manager:
         try:
             from rss_worker import RSSWorker
@@ -96,6 +97,15 @@ async def lifespan(app: FastAPI):
         except Exception as gmail_err:
             logger.warning(f"⚠️ Gmail worker failed to start: {gmail_err}")
             gmail_worker = None
+
+        try:
+            from media_selection import MediaSelectionWorker
+            media_selection_worker = MediaSelectionWorker(db_manager)
+            media_selection_worker.start()
+            logger.info("✅ Media selection worker configured")
+        except Exception as media_selection_err:
+            logger.warning(f"⚠️ Media selection worker failed to start: {media_selection_err}")
+            media_selection_worker = None
 
         try:
             from media_transcription_worker import MediaTranscriptionWorker
@@ -156,6 +166,9 @@ async def lifespan(app: FastAPI):
     if gmail_worker:
         gmail_worker.stop()
         logger.info("Gmail worker stopped")
+    if media_selection_worker:
+        media_selection_worker.stop()
+        logger.info("Media selection worker stopped")
     if media_transcription_worker:
         media_transcription_worker.stop()
         logger.info("Media transcription worker stopped")

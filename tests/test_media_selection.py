@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from media_selection import MediaSelectionPolicy, MediaSelectionProcessor
+from media_selection import MediaSelectionWorker
 
 
 def test_media_selection_policy_approves_relevant_ai_video() -> None:
@@ -55,3 +56,12 @@ async def test_media_selection_processor_marks_discovered_items() -> None:
 
     assert result == {"reviewed": 1, "approved": 1, "rejected": 0}
     assert db.decisions[0]["approved"] is True
+
+
+def test_media_selection_worker_can_be_disabled(monkeypatch) -> None:
+    monkeypatch.setenv("MEDIA_SELECTION_ENABLED", "false")
+
+    worker = MediaSelectionWorker(db_manager=object())
+    worker.start()
+
+    assert worker._task is None
