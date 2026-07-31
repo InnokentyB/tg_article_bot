@@ -102,6 +102,8 @@ class RSSWorker:
 
         supported_source_types = {
             "rss",
+            "video_rss",
+            "podcast_rss",
             "modernanalyst_html",
             "mindtheproduct_json",
             "ireb_html",
@@ -154,6 +156,9 @@ class RSSWorker:
             return
         if source_type == "docs_collection":
             await self._fetch_docs_collection_source(source)
+            return
+        if source_type in {"video_rss", "podcast_rss"}:
+            await self._fetch_media_feed_source(source)
             return
 
         logger.info(
@@ -257,6 +262,87 @@ class RSSWorker:
 
         logger.info(
             "[RSSWorker] source_id=%d done: created=%d duplicates=%d errors=%d",
+            source_id,
+            created,
+            duplicates,
+            errors,
+        )
+
+    async def _fetch_media_feed_source(self, source: dict) -> None:
+        """Crawl an RSS/Atom feed and store entries as media links."""
+        source_id: int = source["id"]
+        source_type: str = source.get("source_type") or "video_rss"
+        feed_url: str = source.get("url", "")
+        source_name: str = source.get("name", feed_url)
+        language: Optional[str] = source.get("language")
+
+        try:
+            import feedparser
+        except ImportError:
+            logger.error("[RSSWorker] feedparser is not installed — cannot crawl media source_id=%d.", source_id)
+            return
+
+        try:
+            parsed_feed = feedparser.parse(feed_url)
+        except Exception as exc:
+            logger.error("[RSSWorker] media source_id=%d failed to parse feed %s: %s", source_id, feed_url, exc)
+            return
+
+        if parsed_feed.bozo and not parsed_feed.entries:
+            logger.warning(
+                "[RSSWorker] media source_id=%d feed is malformed and has no entries: %s",
+                source_id,
+                parsed_feed.bozo_exception,
+            )
+            return
+
+        media_type = "podcast" if source_type == "podcast_rss" else "video"
+        created = duplicates = errors = 0
+        for entry in parsed_feed.entries[: self._fetch_limit]:
+            media_url = self._media_entry_url(entry)
+            if not media_url:
+                errors += 1
+                continue
+
+            metadata = {
+                "ingestion_method": "media_rss_worker",
+                "feed_url": feed_url,
+                "feed_title": parsed_feed.feed.get("title"),
+                "entry_id": entry.get("id") or entry.get("guid"),
+                "entry_link": entry.get("link"),
+                "source_name": source_name,
+            }
+            try:
+                media_item_id = await self._db.upsert_media_item(
+                    url=media_url,
+                    title=entry.get("title"),
+                    description=self._strip_html(entry.get("summary") or entry.get("description") or ""),
+                    source_id=source_id,
+                    media_type=media_type,
+                    platform=self._platform(media_url),
+                    language=language,
+                    published_at=self._entry_published_at(entry),
+                    duration_seconds=self._entry_duration_seconds(entry),
+                    metadata=metadata,
+                )
+                if media_item_id:
+                    created += 1
+            except Exception as exc:
+                logger.error(
+                    "[RSSWorker] media source_id=%d entry %s failed: %s",
+                    source_id,
+                    media_url,
+                    exc,
+                )
+                errors += 1
+
+        try:
+            await self._db.update_source_last_fetched(source_id)
+        except Exception as exc:
+            logger.error("[RSSWorker] media source_id=%d failed to update last_fetched_at: %s", source_id, exc)
+
+        logger.info(
+            "[RSSWorker] media source_id=%d done: stored=%d duplicates_or_updates=%d errors=%d",
             source_id,
             created,
             duplicates,
@@ -696,6 +782,66 @@ class RSSWorker:
                 summary = text.replace(title, "", 1).strip()
                 return summary[:600] if summary else None
         return None
+
+    @staticmethod
+    def _media_entry_url(entry: dict) -> Optional[str]:
+        for enclosure in entry.get("enclosures", []) or []:
+            href = enclosure.get("href") or enclosure.get("url")
+            if href:
+                return href
+
+        links = entry.get("links", []) or []
+        for link in links:
+            href = link.get("href")
+            mime_type = str(link.get("type") or "").lower()
+            rel = str(link.get("rel") or "").lower()
+            if href and (mime_type.startswith(("audio/", "video/")) or rel == "enclosure"):
+                return href
+
+        return entry.get("link")
+
+    @staticmethod
+    def _entry_published_at(entry: dict):
+        published = entry.get("published") or entry.get("updated")
+        if not published:
+            return None
+        try:
+            from email.utils import parsedate_to_datetime
+
+            return parsedate_to_datetime(published)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _entry_duration_seconds(entry: dict) -> Optional[int]:
+        raw_duration = (
+            entry.get("itunes_duration")
+            or entry.get("duration")
+            or entry.get("media_duration")
+        )
+        if raw_duration is None:
+            return None
+        text = str(raw_duration).strip()
+        if text.isdigit():
+            return int(text)
+        parts = text.split(":")
+        if not all(part.isdigit() for part in parts):
+            return None
+        seconds = 0
+        for part in parts:
+            seconds = seconds * 60 + int(part)
+        return seconds
+
+    @staticmethod
+    def _platform(url: str) -> str:
+        host = urlparse(url).netloc.lower()
+        if "youtube.com" in host or "youtu.be" in host:
+            return "youtube"
+        if "spotify.com" in host:
+            return "spotify"
+        if "apple.com" in host:
+            return "apple_podcasts"
+        return host[:80] or "media"
 
     @staticmethod
     def _strip_html(text: str) -> Optional[str]:

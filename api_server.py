@@ -25,6 +25,7 @@ daily_digest_worker = None
 weekly_digest_worker = None
 source_metrics_worker = None
 telegram_post_worker = None
+media_transcription_worker = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -76,7 +77,7 @@ async def lifespan(app: FastAPI):
         db_manager = None
 
     # Start background RSS worker (only when DB is available)
-    global rss_worker, gmail_worker, daily_digest_worker, weekly_digest_worker, source_metrics_worker, telegram_post_worker
+    global rss_worker, gmail_worker, daily_digest_worker, weekly_digest_worker, source_metrics_worker, telegram_post_worker, media_transcription_worker
     if db_manager:
         try:
             from rss_worker import RSSWorker
@@ -95,6 +96,19 @@ async def lifespan(app: FastAPI):
         except Exception as gmail_err:
             logger.warning(f"⚠️ Gmail worker failed to start: {gmail_err}")
             gmail_worker = None
+
+        try:
+            from media_transcription_worker import MediaTranscriptionWorker
+            media_transcription_worker = MediaTranscriptionWorker(
+                db_manager,
+                categorize_fn=basic_categorize,
+                embed_fn=build_article_embeddings,
+            )
+            media_transcription_worker.start()
+            logger.info("✅ Media transcription worker configured")
+        except Exception as media_err:
+            logger.warning(f"⚠️ Media transcription worker failed to start: {media_err}")
+            media_transcription_worker = None
 
         try:
             from daily_digest_job import DailyDigestWorker
@@ -142,6 +156,9 @@ async def lifespan(app: FastAPI):
     if gmail_worker:
         gmail_worker.stop()
         logger.info("Gmail worker stopped")
+    if media_transcription_worker:
+        media_transcription_worker.stop()
+        logger.info("Media transcription worker stopped")
     if daily_digest_worker:
         daily_digest_worker.stop()
         logger.info("Daily digest worker stopped")
@@ -541,6 +558,14 @@ def normalize_feed_text(value: Optional[str]) -> Optional[str]:
     text = re.sub(r"\s+", " ", text).strip()
     return text or None
 
+
+def serialize_record(row: dict) -> dict:
+    serialized = dict(row)
+    for key, value in list(serialized.items()):
+        if hasattr(value, "isoformat"):
+            serialized[key] = value.isoformat()
+    return serialized
+
 @app.post("/ingest/rss")
 async def ingest_rss(feed_data: dict, auth: bool = Depends(verify_api_key)):
     """Ingest articles from an RSS/Atom feed."""
@@ -667,13 +692,7 @@ async def list_sources(active_only: bool = True, auth: bool = Depends(verify_api
         raise HTTPException(status_code=503, detail="Database not available")
     sources = await db_manager.get_sources(active_only=active_only)
     # Serialize datetimes to ISO strings for JSON compatibility
-    serialized = []
-    for row in sources:
-        row_copy = dict(row)
-        for key in ("last_fetched_at", "created_at", "updated_at"):
-            if row_copy.get(key) is not None:
-                row_copy[key] = row_copy[key].isoformat()
-        serialized.append(row_copy)
+    serialized = [serialize_record(row) for row in sources]
     return {"sources": serialized, "count": len(serialized)}
 
 
@@ -697,13 +716,21 @@ async def add_source(source_data: dict, auth: bool = Depends(verify_api_key)):
 
     name = (source_data.get("name") or feed_url).strip()
     language = source_data.get("language")
+    source_type = (source_data.get("source_type") or "rss").strip()
+    allowed_source_types = {"rss", "video_rss", "podcast_rss"}
+    if source_type not in allowed_source_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported source_type. Allowed: {', '.join(sorted(allowed_source_types))}",
+        )
+
     fetch_interval_hours = int(source_data.get("fetch_interval_hours") or 2)
     fetch_interval_hours = max(1, min(fetch_interval_hours, 24 * 7))  # 1h – 7d
 
     source_id = await db_manager.upsert_source(
         name=name,
         url=feed_url,
-        source_type="rss",
+        source_type=source_type,
         language=language,
         fetch_interval_hours=fetch_interval_hours,
         metadata={"added_via": "api"},
@@ -714,8 +741,77 @@ async def add_source(source_data: dict, auth: bool = Depends(verify_api_key)):
         "source_id": source_id,
         "name": name,
         "feed_url": feed_url,
+        "source_type": source_type,
         "fetch_interval_hours": fetch_interval_hours,
     }
+
+
+@app.get("/media/links")
+async def list_media_links(
+    status: Optional[str] = None,
+    limit: int = 50,
+    auth: bool = Depends(verify_api_key),
+):
+    """List collected video and podcast links."""
+    global db_manager
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    limit = max(1, min(limit, 200))
+    rows = await db_manager.get_media_items(status=status, limit=limit)
+    return {"items": [serialize_record(row) for row in rows], "count": len(rows)}
+
+
+@app.post("/media/links")
+async def add_media_link(media_data: dict, auth: bool = Depends(verify_api_key)):
+    """Add a single video or podcast link to the media library."""
+    global db_manager
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    url = (media_data.get("url") or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="url is required")
+
+    media_type = (media_data.get("media_type") or "video").strip()
+    if media_type not in {"video", "podcast", "audio"}:
+        raise HTTPException(status_code=400, detail="media_type must be video, podcast, or audio")
+
+    source_id = media_data.get("source_id")
+
+    media_item_id = await db_manager.upsert_media_item(
+        url=url,
+        title=media_data.get("title"),
+        description=media_data.get("description"),
+        source_id=source_id,
+        media_type=media_type,
+        platform=media_data.get("platform") or urlparse(url).netloc,
+        language=media_data.get("language"),
+        metadata={
+            "added_via": "api",
+            "source_name": media_data.get("source_name"),
+            "source_url": media_data.get("source_url"),
+        },
+    )
+    return {"status": "created", "media_item_id": media_item_id, "source_id": source_id}
+
+
+@app.post("/media/transcriptions/process")
+async def process_media_transcriptions(limit: int = 5, auth: bool = Depends(verify_api_key)):
+    """Manually process due media transcription jobs once."""
+    global db_manager
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    from media_transcription_worker import MediaTranscriptionProcessor
+
+    processor = MediaTranscriptionProcessor(
+        db_manager,
+        categorize_fn=basic_categorize,
+        embed_fn=build_article_embeddings,
+    )
+    result = await processor.process_due_items(limit=max(1, min(limit, 20)))
+    return {"status": "completed", **result}
 
 
 @app.delete("/sources/{source_id}")

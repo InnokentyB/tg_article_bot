@@ -76,6 +76,25 @@ async def test_transcribeit_client_get_transcription() -> None:
 
 
 @pytest.mark.asyncio
+async def test_transcribeit_client_upload_url_success() -> None:
+    """Test URL submission via TranscribeItClient"""
+    client = TranscribeItClient(api_key="test_key", base_url="https://test.transcribeit.ru")
+
+    mock_response = MagicMock()
+    mock_response.status_code = 201
+    mock_response.json = MagicMock(return_value={"id": "url-tx-123", "status": "queued"})
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value = mock_response
+
+        tx_id = await client.upload_url("https://www.youtube.com/watch?v=dQw4w9WgXcQ", language="en")
+        assert tx_id == "url-tx-123"
+        mock_post.assert_called_once()
+        _, kwargs = mock_post.call_args
+        assert kwargs["json"]["url"] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+
+@pytest.mark.asyncio
 async def test_suggest_video_url_transcription(bot: ArticleBot) -> None:
     """Verify that message with video link triggers transcription suggestions"""
     chat = Chat(id=111, type="private")

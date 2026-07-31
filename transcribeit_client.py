@@ -102,14 +102,15 @@ class TranscribeItClient:
             logger.error("[TranscribeIt] Cannot check status: API key is not configured.")
             return None
             
-        url: str = f"{self.base_url}/transcriptions/{transaction_id}"
         headers: Dict[str, str] = {
             "X-API-Key": self.api_key
         }
         
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.get(url, headers=headers)
+                response = await client.get(f"{self.base_url}/transcriptions/{transaction_id}", headers=headers)
+                if response.status_code == 404:
+                    response = await client.get(f"{self.base_url}/transcription/{transaction_id}", headers=headers)
                 
                 if response.status_code != 200:
                     logger.error(f"[TranscribeIt] Status check failed with status {response.status_code}: {response.text}")
@@ -120,4 +121,43 @@ class TranscribeItClient:
                 
         except Exception as e:
             logger.error(f"[TranscribeIt] Error checking transcription status for {transaction_id}: {e}")
+            return None
+
+    async def upload_url(self, url: str, language: str = "auto") -> Optional[str]:
+        """
+        Submit an external audio/video URL to TranscribeIt.
+
+        :param url: Source URL, for example YouTube video or podcast audio URL
+        :param language: Language hint, e.g. 'ru', 'en', or 'auto'
+        :return: transcription id if accepted, None otherwise
+        """
+        if not self.api_key:
+            logger.error("[TranscribeIt] Cannot submit URL: API key is not configured.")
+            return None
+
+        endpoint = f"{self.base_url}/upload/url"
+        headers: Dict[str, str] = {
+            "X-API-Key": self.api_key,
+            "Content-Type": "application/json",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    endpoint,
+                    headers=headers,
+                    json={"url": url, "language": language},
+                )
+                if response.status_code not in (200, 201):
+                    logger.error(
+                        "[TranscribeIt] URL upload failed with status %s: %s",
+                        response.status_code,
+                        response.text,
+                    )
+                    return None
+
+                resp_json: Dict[str, Any] = response.json()
+                return resp_json.get("transaction_id") or resp_json.get("id")
+        except Exception as e:
+            logger.error(f"[TranscribeIt] Error submitting URL {url}: {e}")
             return None

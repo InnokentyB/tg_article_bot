@@ -95,7 +95,31 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jsonb
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS direct_source_url TEXT;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS external_stats JSONB DEFAULT '{}'::jsonb;
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS last_stats_update TIMESTAMP WITH TIME ZONE;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS content_type VARCHAR(30) DEFAULT 'article';
 ALTER TABLE articles ALTER COLUMN title DROP NOT NULL;
+
+-- Библиотека медиа-ссылок: видео и подкасты до/после транскрибации.
+CREATE TABLE IF NOT EXISTS media_items (
+    id SERIAL PRIMARY KEY,
+    source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL,
+    article_id INTEGER REFERENCES articles(id) ON DELETE SET NULL,
+    url TEXT NOT NULL UNIQUE,
+    title TEXT,
+    description TEXT,
+    media_type VARCHAR(30) NOT NULL DEFAULT 'video',
+    platform VARCHAR(80),
+    language VARCHAR(10),
+    status VARCHAR(30) NOT NULL DEFAULT 'discovered',
+    published_at TIMESTAMP WITH TIME ZONE,
+    duration_seconds INTEGER,
+    transaction_id TEXT,
+    transcript_text TEXT,
+    last_error TEXT,
+    next_check_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
 -- Чанки статей для embedding/retrieval
 CREATE TABLE IF NOT EXISTS article_chunks (
@@ -236,9 +260,13 @@ CREATE INDEX IF NOT EXISTS idx_articles_published_at ON articles(published_at DE
 CREATE INDEX IF NOT EXISTS idx_articles_canonical_url ON articles(canonical_url);
 CREATE INDEX IF NOT EXISTS idx_articles_direct_source_url ON articles(direct_source_url);
 CREATE INDEX IF NOT EXISTS idx_articles_language ON articles(language);
+CREATE INDEX IF NOT EXISTS idx_articles_content_type ON articles(content_type);
 CREATE INDEX IF NOT EXISTS idx_articles_categories ON articles USING GIN(categories_user);
 CREATE INDEX IF NOT EXISTS idx_articles_categories_auto ON articles USING GIN(categories_auto);
 CREATE INDEX IF NOT EXISTS idx_sources_source_type ON sources(source_type);
+CREATE INDEX IF NOT EXISTS idx_media_items_status_next_check ON media_items(status, next_check_at);
+CREATE INDEX IF NOT EXISTS idx_media_items_source_id ON media_items(source_id);
+CREATE INDEX IF NOT EXISTS idx_media_items_article_id ON media_items(article_id);
 CREATE INDEX IF NOT EXISTS idx_article_chunks_article_id ON article_chunks(article_id);
 CREATE INDEX IF NOT EXISTS idx_article_embeddings_article_id ON article_embeddings(article_id);
 CREATE INDEX IF NOT EXISTS idx_article_embeddings_chunk_model ON article_embeddings(chunk_id, model);
@@ -275,6 +303,10 @@ CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
 
 DROP TRIGGER IF EXISTS update_articles_updated_at ON articles;
 CREATE TRIGGER update_articles_updated_at BEFORE UPDATE ON articles
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS update_media_items_updated_at ON media_items;
+CREATE TRIGGER update_media_items_updated_at BEFORE UPDATE ON media_items
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 DROP TRIGGER IF EXISTS update_sources_updated_at ON sources;

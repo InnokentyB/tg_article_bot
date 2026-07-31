@@ -56,6 +56,8 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
                 {"id": 5, "name": "Mind the Product", "source_type": "mindtheproduct_json"},
                 {"id": 6, "name": "IREB", "source_type": "ireb_html"},
                 {"id": 7, "name": "Docs", "source_type": "docs_collection"},
+                {"id": 8, "name": "Video feed", "source_type": "video_rss"},
+                {"id": 9, "name": "Podcast feed", "source_type": "podcast_rss"},
             ]
 
     async def run() -> None:
@@ -68,7 +70,7 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
         worker._fetch_source = fake_fetch_source
         await worker._poll_once()
 
-        assert fetched == [2, 4, 5, 6, 7]
+        assert fetched == [2, 4, 5, 6, 7, 8, 9]
 
     asyncio.run(run())
 
@@ -118,6 +120,65 @@ def test_rss_worker_passes_source_id_to_ingestion(monkeypatch) -> None:
     asyncio.run(run())
 
     assert captured_payloads[0]["source_id"] == 42
+
+
+def test_rss_worker_stores_podcast_feed_entries_as_media_links(monkeypatch) -> None:
+    monkeypatch.setenv("WORKER_ENABLED", "true")
+
+    class FakeDB:
+        def __init__(self) -> None:
+            self.media_items = []
+            self.fetched = []
+
+        async def upsert_media_item(self, **kwargs) -> int:
+            self.media_items.append(kwargs)
+            return len(self.media_items)
+
+        async def update_source_last_fetched(self, source_id: int) -> None:
+            self.fetched.append(source_id)
+
+    db = FakeDB()
+
+    class ParsedFeed:
+        bozo = False
+        feed = {"title": "Good Podcast"}
+        entries = [
+            {
+                "title": "Episode One",
+                "summary": "<p>About product work</p>",
+                "link": "https://example.com/episode-one",
+                "published": "Wed, 29 Jul 2026 10:00:00 GMT",
+                "itunes_duration": "01:02:03",
+                "enclosures": [
+                    {"href": "https://cdn.example.com/episode-one.mp3", "type": "audio/mpeg"}
+                ],
+            }
+        ]
+
+    async def run() -> None:
+        monkeypatch.setitem(
+            __import__("sys").modules,
+            "feedparser",
+            types.SimpleNamespace(parse=lambda _url: ParsedFeed()),
+        )
+        worker = RSSWorker(db_manager=db, ingest_fn=_unused_ingest_fn)
+        await worker._fetch_source(
+            {
+                "id": 77,
+                "name": "Good Podcast",
+                "url": "https://example.com/feed.xml",
+                "source_type": "podcast_rss",
+                "language": "en",
+            }
+        )
+
+    asyncio.run(run())
+
+    assert db.fetched == [77]
+    assert db.media_items[0]["url"] == "https://cdn.example.com/episode-one.mp3"
+    assert db.media_items[0]["media_type"] == "podcast"
+    assert db.media_items[0]["title"] == "Episode One"
+    assert db.media_items[0]["duration_seconds"] == 3723
 
 
 def test_rss_worker_ingests_docs_collection_entries(monkeypatch) -> None:

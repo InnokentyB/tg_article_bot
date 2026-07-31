@@ -423,6 +423,7 @@ class DatabaseManager:
         published_at: Optional[datetime] = None,
         extracted_at: Optional[datetime] = None,
         popularity_score: Optional[float] = None,
+        content_type: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Update MVP article-intelligence metadata for an existing article."""
@@ -436,7 +437,8 @@ class DatabaseManager:
                        published_at = COALESCE($4, published_at),
                        extracted_at = COALESCE($5, extracted_at),
                        popularity_score = COALESCE($6, popularity_score),
-                       metadata = metadata || $7::jsonb,
+                       content_type = COALESCE($7, content_type),
+                       metadata = metadata || $8::jsonb,
                        updated_at = CURRENT_TIMESTAMP
                    WHERE id = $1""",
                 article_id,
@@ -445,6 +447,203 @@ class DatabaseManager:
                 published_at,
                 extracted_at,
                 popularity_score,
+                content_type,
+                json.dumps(metadata or {}),
+            )
+
+    async def upsert_media_item(
+        self,
+        *,
+        url: str,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        source_id: Optional[int] = None,
+        media_type: str = "video",
+        platform: Optional[str] = None,
+        language: Optional[str] = None,
+        published_at: Optional[datetime] = None,
+        duration_seconds: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> int:
+        """Create or update a discovered video/podcast link."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        normalized_url = url.strip()
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(
+                """
+                INSERT INTO media_items
+                    (source_id, url, title, description, media_type, platform, language,
+                     published_at, duration_seconds, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+                ON CONFLICT (url) DO UPDATE SET
+                    source_id = COALESCE(EXCLUDED.source_id, media_items.source_id),
+                    title = COALESCE(EXCLUDED.title, media_items.title),
+                    description = COALESCE(EXCLUDED.description, media_items.description),
+                    media_type = EXCLUDED.media_type,
+                    platform = COALESCE(EXCLUDED.platform, media_items.platform),
+                    language = COALESCE(EXCLUDED.language, media_items.language),
+                    published_at = COALESCE(EXCLUDED.published_at, media_items.published_at),
+                    duration_seconds = COALESCE(EXCLUDED.duration_seconds, media_items.duration_seconds),
+                    metadata = media_items.metadata || EXCLUDED.metadata
+                RETURNING id
+                """,
+                source_id,
+                normalized_url,
+                title,
+                description,
+                media_type,
+                platform,
+                language,
+                published_at,
+                duration_seconds,
+                json.dumps(metadata or {}),
+            )
+
+    async def get_media_items(
+        self,
+        *,
+        status: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """List media library items."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            if status:
+                rows = await conn.fetch(
+                    """
+                    SELECT *
+                    FROM media_items
+                    WHERE status = $1
+                    ORDER BY created_at DESC
+                    LIMIT $2
+                    """,
+                    status,
+                    limit,
+                )
+            else:
+                rows = await conn.fetch(
+                    """
+                    SELECT *
+                    FROM media_items
+                    ORDER BY created_at DESC
+                    LIMIT $1
+                    """,
+                    limit,
+                )
+            return [dict(row) for row in rows]
+
+    async def get_due_media_items(self, *, limit: int = 10) -> List[Dict[str, Any]]:
+        """Fetch media links due for submission/polling."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT *
+                FROM media_items
+                WHERE status IN ('discovered', 'queued', 'processing')
+                  AND COALESCE(next_check_at, NOW()) <= NOW()
+                ORDER BY next_check_at ASC NULLS FIRST, id ASC
+                LIMIT $1
+                """,
+                limit,
+            )
+            return [dict(row) for row in rows]
+
+    async def mark_media_submitted(
+        self,
+        media_item_id: int,
+        *,
+        transaction_id: str,
+        next_check_minutes: int = 5,
+    ) -> None:
+        """Mark media item as submitted to TranscribeIt."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE media_items
+                SET status = 'processing',
+                    transaction_id = $2,
+                    next_check_at = NOW() + ($3::text || ' minutes')::interval,
+                    last_error = NULL
+                WHERE id = $1
+                """,
+                media_item_id,
+                transaction_id,
+                next_check_minutes,
+            )
+
+    async def mark_media_processing(
+        self,
+        media_item_id: int,
+        *,
+        next_check_minutes: int = 10,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Postpone polling for a still-running transcription."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE media_items
+                SET status = 'processing',
+                    next_check_at = NOW() + ($2::text || ' minutes')::interval,
+                    metadata = metadata || $3::jsonb
+                WHERE id = $1
+                """,
+                media_item_id,
+                next_check_minutes,
+                json.dumps(metadata or {}),
+            )
+
+    async def mark_media_failed(self, media_item_id: int, error: str) -> None:
+        """Mark media transcription as failed."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE media_items
+                SET status = 'failed',
+                    last_error = $2,
+                    next_check_at = NULL
+                WHERE id = $1
+                """,
+                media_item_id,
+                error[:2000],
+            )
+
+    async def mark_media_transcribed(
+        self,
+        media_item_id: int,
+        *,
+        article_id: int,
+        transcript_text: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Mark media as transcribed and linked to the created article."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE media_items
+                SET status = 'transcribed',
+                    article_id = $2,
+                    transcript_text = $3,
+                    next_check_at = NULL,
+                    last_error = NULL,
+                    metadata = metadata || $4::jsonb
+                WHERE id = $1
+                """,
+                media_item_id,
+                article_id,
+                transcript_text,
                 json.dumps(metadata or {}),
             )
 
