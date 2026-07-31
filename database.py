@@ -543,7 +543,7 @@ class DatabaseManager:
                 """
                 SELECT *
                 FROM media_items
-                WHERE status IN ('discovered', 'queued', 'processing')
+                WHERE status IN ('approved', 'processing')
                   AND COALESCE(next_check_at, NOW()) <= NOW()
                 ORDER BY next_check_at ASC NULLS FIRST, id ASC
                 LIMIT $1
@@ -551,6 +551,54 @@ class DatabaseManager:
                 limit,
             )
             return [dict(row) for row in rows]
+
+    async def get_media_items_for_decision(self, *, limit: int = 20) -> List[Dict[str, Any]]:
+        """Fetch discovered media links that need editorial approval."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT *
+                FROM media_items
+                WHERE status = 'discovered'
+                ORDER BY published_at DESC NULLS LAST, created_at DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+            return [dict(row) for row in rows]
+
+    async def mark_media_decision(
+        self,
+        media_item_id: int,
+        *,
+        approved: bool,
+        score: float,
+        reason: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Store an editorial decision for whether a media link should be transcribed."""
+        if not self.pool:
+            raise RuntimeError("Database pool not initialized")
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                """
+                UPDATE media_items
+                SET status = CASE WHEN $2 THEN 'approved' ELSE 'rejected' END,
+                    decision_score = $3,
+                    decision_reason = $4,
+                    next_check_at = CASE WHEN $2 THEN NOW() ELSE NULL END,
+                    metadata = metadata || $5::jsonb,
+                    last_error = NULL
+                WHERE id = $1
+                """,
+                media_item_id,
+                approved,
+                score,
+                reason[:2000],
+                json.dumps(metadata or {}),
+            )
 
     async def mark_media_submitted(
         self,

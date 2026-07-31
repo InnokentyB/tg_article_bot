@@ -35,9 +35,13 @@ class MediaTranscriptionProcessor:
         for item in items:
             try:
                 status = item.get("status")
-                if status in ("discovered", "queued") or not item.get("transaction_id"):
+                if status == "approved" and not item.get("transaction_id"):
                     submitted = await self._submit_item(item)
                     result["submitted" if submitted else "failed"] += 1
+                    continue
+                if not item.get("transaction_id"):
+                    await self._db.mark_media_failed(item["id"], "Approved media item has no TranscribeIt transaction id")
+                    result["failed"] += 1
                     continue
 
                 completed = await self._poll_item(item)

@@ -796,6 +796,44 @@ async def add_media_link(media_data: dict, auth: bool = Depends(verify_api_key))
     return {"status": "created", "media_item_id": media_item_id, "source_id": source_id}
 
 
+@app.post("/media/links/evaluate")
+async def evaluate_media_links(limit: int = 20, auth: bool = Depends(verify_api_key)):
+    """Evaluate discovered media links and approve/reject them before transcription."""
+    global db_manager
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    from media_selection import MediaSelectionProcessor
+
+    result = await MediaSelectionProcessor(db_manager).process_pending(limit=max(1, min(limit, 100)))
+    return {"status": "completed", **result}
+
+
+@app.post("/media/links/{media_item_id}/decision")
+async def decide_media_link(media_item_id: int, decision_data: dict, auth: bool = Depends(verify_api_key)):
+    """Manually approve or reject a media link for transcription."""
+    global db_manager
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    approved = bool(decision_data.get("approved"))
+    reason = decision_data.get("reason") or ("Manual approval" if approved else "Manual rejection")
+    score = float(decision_data.get("score") if decision_data.get("score") is not None else (10 if approved else 0))
+    await db_manager.mark_media_decision(
+        media_item_id,
+        approved=approved,
+        score=score,
+        reason=reason,
+        metadata={"manual_decision": True},
+    )
+    return {
+        "status": "approved" if approved else "rejected",
+        "media_item_id": media_item_id,
+        "decision_score": score,
+        "decision_reason": reason,
+    }
+
+
 @app.post("/media/transcriptions/process")
 async def process_media_transcriptions(limit: int = 5, auth: bool = Depends(verify_api_key)):
     """Manually process due media transcription jobs once."""

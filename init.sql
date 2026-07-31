@@ -114,12 +114,17 @@ CREATE TABLE IF NOT EXISTS media_items (
     duration_seconds INTEGER,
     transaction_id TEXT,
     transcript_text TEXT,
+    decision_score DOUBLE PRECISION DEFAULT 0,
+    decision_reason TEXT,
     last_error TEXT,
     next_check_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     metadata JSONB DEFAULT '{}'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE media_items ADD COLUMN IF NOT EXISTS decision_score DOUBLE PRECISION DEFAULT 0;
+ALTER TABLE media_items ADD COLUMN IF NOT EXISTS decision_reason TEXT;
 
 -- Чанки статей для embedding/retrieval
 CREATE TABLE IF NOT EXISTS article_chunks (
@@ -265,6 +270,7 @@ CREATE INDEX IF NOT EXISTS idx_articles_categories ON articles USING GIN(categor
 CREATE INDEX IF NOT EXISTS idx_articles_categories_auto ON articles USING GIN(categories_auto);
 CREATE INDEX IF NOT EXISTS idx_sources_source_type ON sources(source_type);
 CREATE INDEX IF NOT EXISTS idx_media_items_status_next_check ON media_items(status, next_check_at);
+CREATE INDEX IF NOT EXISTS idx_media_items_decision_score ON media_items(decision_score DESC);
 CREATE INDEX IF NOT EXISTS idx_media_items_source_id ON media_items(source_id);
 CREATE INDEX IF NOT EXISTS idx_media_items_article_id ON media_items(article_id);
 CREATE INDEX IF NOT EXISTS idx_article_chunks_article_id ON article_chunks(article_id);

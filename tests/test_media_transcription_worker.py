@@ -86,3 +86,42 @@ async def test_media_processor_stores_completed_transcript_as_article(monkeypatc
     assert db.updated_fields["metadata"]["ingestion_method"] == "media_transcription"
     assert db.marked["article_id"] == 123
     assert db.embedded["article_id"] == 123
+
+
+@pytest.mark.asyncio
+async def test_media_processor_only_submits_approved_items(monkeypatch) -> None:
+    class FakeClient:
+        def is_configured(self) -> bool:
+            return True
+
+        async def upload_url(self, url: str, language: str = "auto") -> str:
+            return "tx-approved"
+
+    class FakeDb:
+        def __init__(self) -> None:
+            self.submitted = []
+
+        async def get_due_media_items(self, limit: int) -> list[dict]:
+            return [
+                {
+                    "id": 7,
+                    "url": "https://youtube.com/watch?v=approved",
+                    "status": "approved",
+                    "transaction_id": None,
+                    "language": "en",
+                }
+            ]
+
+        async def mark_media_submitted(self, media_item_id: int, **kwargs) -> None:
+            self.submitted.append({"id": media_item_id, **kwargs})
+
+        async def mark_media_failed(self, media_item_id: int, error: str) -> None:
+            self.failed = {"id": media_item_id, "error": error}
+
+    monkeypatch.setattr("transcribeit_client.TranscribeItClient", lambda: FakeClient())
+    db = FakeDb()
+
+    result = await MediaTranscriptionProcessor(db).process_due_items(limit=1)
+
+    assert result["submitted"] == 1
+    assert db.submitted[0]["transaction_id"] == "tx-approved"
