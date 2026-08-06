@@ -265,7 +265,7 @@ INSERT INTO sources (
   ),
   (
     'Business Analyst Mentor',
-    'https://businessanalystmentor.com/blog/feed/',
+    'https://businessanalystmentor.com/feed/',
     'rss',
     'en',
     24,
@@ -283,7 +283,7 @@ INSERT INTO sources (
   ),
   (
     'Passionate BA',
-    'https://passionateba.pro/blog/feed/',
+    'https://passionateba.pro/feed/',
     'rss',
     'en',
     24,

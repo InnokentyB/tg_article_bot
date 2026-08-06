@@ -474,7 +474,7 @@
     },
     {
       "name": "Business Analyst Mentor",
-      "url": "https://businessanalystmentor.com/blog/feed/",
+      "url": "https://businessanalystmentor.com/feed/",
       "source_type": "rss",
       "language": "en",
       "is_active": true,
@@ -506,7 +506,7 @@
     },
     {
       "name": "Passionate BA",
-      "url": "https://passionateba.pro/blog/feed/",
+      "url": "https://passionateba.pro/feed/",
       "source_type": "rss",
       "language": "en",
       "is_active": true,
