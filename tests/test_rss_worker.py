@@ -108,6 +108,11 @@ def test_rss_worker_passes_source_id_to_ingestion(monkeypatch) -> None:
             "feedparser",
             types.SimpleNamespace(parse=lambda *_args, **_kwargs: ParsedFeed()),
         )
+        monkeypatch.setattr(
+            RSSWorker,
+            "_fetch_feed_text",
+            staticmethod(lambda _url: "<?xml version='1.0'?><rss></rss>"),
+        )
 
         await worker._fetch_source(
             {
@@ -324,6 +329,34 @@ def test_rss_worker_parses_mindtheproduct_json_feed() -> None:
             "link": "https://www.mindtheproduct.com/evals-are-the-new-prd",
             "summary": "Lisa Murkin",
             "fallback_text": "Evals are the new PRD\n\nLisa Murkin",
+        }
+    ]
+
+
+def test_rss_worker_parses_wordpress_posts_api() -> None:
+    payload = [
+        {
+            "title": {"rendered": "A Business Analyst&#8217;s Guide to Career Planning"},
+            "link": "https://thebaguide.com/blog/a-business-analysts-guide/",
+            "excerpt": {"rendered": "<p>Plan your next business analysis career move.</p>"},
+        },
+        {
+            "title": {"rendered": "Missing Link"},
+            "excerpt": {"rendered": "<p>No URL.</p>"},
+        },
+    ]
+
+    entries = RSSWorker._parse_wordpress_posts(payload)
+
+    assert entries == [
+        {
+            "title": "A Business Analyst’s Guide to Career Planning",
+            "link": "https://thebaguide.com/blog/a-business-analysts-guide/",
+            "summary": "Plan your next business analysis career move.",
+            "fallback_text": (
+                "A Business Analyst’s Guide to Career Planning\n\n"
+                "Plan your next business analysis career move."
+            ),
         }
     ]
 

@@ -192,14 +192,12 @@ class RSSWorker:
             return
 
         try:
-            parsed_feed = feedparser.parse(
+            feed_text = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._fetch_feed_text,
                 feed_url,
-                request_headers={
-                    "User-Agent": self._USER_AGENT,
-                    "Accept": "application/rss+xml,application/atom+xml,text/xml,*/*",
-                    "Accept-Language": "en-US,en;q=0.9",
-                },
             )
+            parsed_feed = feedparser.parse(feed_text)
         except Exception as exc:
             logger.error(
                 "[RSSWorker] source_id=%d failed to parse feed %s: %s",
@@ -567,20 +565,33 @@ class RSSWorker:
         )
 
         try:
-            html = await asyncio.get_running_loop().run_in_executor(
+            payload = await asyncio.get_running_loop().run_in_executor(
                 None,
-                self._fetch_html,
-                listing_url,
+                self._fetch_json,
+                "https://thebaguide.com/wp-json/wp/v2/posts?per_page=20",
             )
-            entries = self._parse_thebaguide_articles(html, listing_url)[: self._fetch_limit]
+            entries = self._parse_wordpress_posts(payload)[: self._fetch_limit]
         except Exception as exc:
-            logger.error(
-                "[RSSWorker] source_id=%d failed to parse The BA Guide listing %s: %s",
+            logger.warning(
+                "[RSSWorker] source_id=%d failed to parse The BA Guide JSON feed, trying HTML fallback: %s",
                 source_id,
-                listing_url,
                 exc,
             )
-            return
+            try:
+                html = await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    self._fetch_html,
+                    listing_url,
+                )
+                entries = self._parse_thebaguide_articles(html, listing_url)[: self._fetch_limit]
+            except Exception as fallback_exc:
+                logger.error(
+                    "[RSSWorker] source_id=%d failed to parse The BA Guide listing %s: %s",
+                    source_id,
+                    listing_url,
+                    fallback_exc,
+                )
+                return
 
         await self._ingest_entries(source_id, source_name, language, entries, "thebaguide_html_worker")
 
@@ -714,6 +725,26 @@ class RSSWorker:
         return response.text
 
     @staticmethod
+    def _fetch_feed_text(url: str) -> str:
+        import requests
+
+        response = requests.get(
+            url,
+            timeout=30,
+            headers={
+                "User-Agent": RSSWorker._USER_AGENT,
+                "Accept": "application/rss+xml,application/atom+xml,text/xml,*/*",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        )
+        response.raise_for_status()
+        text = response.text
+        xml_start = text.find("<?xml")
+        if xml_start > 0:
+            text = text[xml_start:]
+        return text
+
+    @staticmethod
     def _fetch_json(url: str) -> dict:
         import requests
 
@@ -749,6 +780,35 @@ class RSSWorker:
 
             authors = cls._parse_mindtheproduct_authors(data)
             summary = ", ".join(authors) if authors else None
+            entries.append(
+                {
+                    "title": title,
+                    "link": link,
+                    "summary": summary,
+                    "fallback_text": "\n\n".join(part for part in (title, summary) if part),
+                }
+            )
+            seen_urls.add(link)
+
+        return entries
+
+    @classmethod
+    def _parse_wordpress_posts(cls, payload) -> list[dict]:
+        """Extract article candidates from a WordPress posts API response."""
+        entries: list[dict] = []
+        seen_urls: set[str] = set()
+
+        if not isinstance(payload, list):
+            return entries
+
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            link = (item.get("link") or "").strip()
+            title = cls._strip_html(((item.get("title") or {}).get("rendered") or ""))
+            summary = cls._strip_html(((item.get("excerpt") or {}).get("rendered") or ""))
+            if not title or not link or link in seen_urls:
+                continue
             entries.append(
                 {
                     "title": title,
