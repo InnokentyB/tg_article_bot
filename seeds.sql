@@ -291,6 +291,60 @@ INSERT INTO sources (
     '{"tier": 1, "topics": ["business_analysis", "requirements", "systems_analysis", "product_ownership", "product_management"], "trust_level": "expert_practitioner", "noise_risk": "low", "bias": "independent_practitioner", "editorial_role": "requirements engineering, systems analysis, product ownership, product management, and business analysis practice"}'
   ),
   (
+    'Karl Wiegers / Process Impact',
+    'https://medium.com/feed/@karlwiegers',
+    'rss',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["requirements", "business_analysis", "software_engineering", "quality", "product"], "trust_level": "expert_classic", "noise_risk": "low", "bias": "independent_expert", "editorial_role": "Karl Wiegers articles on requirements engineering, software requirements, business analysis, quality, product design, and software process practice", "source_context": "Process Impact links readers to Karl Wiegers'' Medium article archive for current article access."}'
+  ),
+  (
+    'ArgonDigital',
+    'https://argondigital.com/blog/feed/',
+    'rss',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["requirements", "business_analysis", "product_management", "models", "automation"], "trust_level": "expert_consulting", "noise_risk": "medium", "bias": "consulting_vendor", "editorial_role": "requirements consulting, product management, visual models, business analysis methods, and enterprise automation practice"}'
+  ),
+  (
+    'Jama Software Blog',
+    'https://www.jamasoftware.com/feed/',
+    'rss',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["requirements", "traceability", "systems_engineering", "regulated_industries", "product_development"], "trust_level": "vendor_editorial", "noise_risk": "medium", "bias": "vendor", "editorial_role": "requirements management, live traceability, systems engineering, compliance, regulated product development, and Jama Connect practice"}'
+  ),
+  (
+    'Visure Solutions Blog',
+    'https://visuresolutions.com/blog/feed/',
+    'rss',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["requirements", "traceability", "alm", "regulated_industries", "compliance"], "trust_level": "vendor_editorial", "noise_risk": "medium", "bias": "vendor", "editorial_role": "requirements ALM, traceability, risk, compliance, safety-critical and regulated industry requirements practice"}'
+  ),
+  (
+    'InfoQ Architecture',
+    'https://feed.infoq.com/architecture',
+    'rss',
+    'en',
+    12,
+    TRUE,
+    '{"tier": 1, "topics": ["architecture", "software_engineering", "systems_design", "enterprise_architecture", "case_studies"], "trust_level": "industry_editorial", "noise_risk": "medium", "bias": "professional_media", "editorial_role": "software architecture, systems design, enterprise architecture, architectural patterns, and engineering case studies adjacent to requirements work"}'
+  ),
+  (
+    'arc42 Documentation',
+    'https://docs.arc42.org/home/',
+    'docs_collection',
+    'en',
+    168,
+    TRUE,
+    '{"tier": 1, "topics": ["architecture", "documentation", "architecture_decisions", "quality_attributes", "templates"], "trust_level": "primary_framework", "noise_risk": "low", "bias": "framework_authors", "editorial_role": "arc42 architecture documentation template, architecture decision guidance, quality goals, context, constraints, and communication practice", "entry_urls": [{"title": "arc42 Documentation", "url": "https://docs.arc42.org/home/", "summary": "Official arc42 documentation for pragmatic software architecture documentation and communication."}]}'
+  ),
+  (
     'OpenAI Cookbook',
     'https://developers.openai.com/cookbook',
     'docs_collection',

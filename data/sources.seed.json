@@ -572,6 +572,110 @@
       }
     },
     {
+      "name": "Karl Wiegers / Process Impact",
+      "url": "https://medium.com/feed/@karlwiegers",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["requirements", "business_analysis", "software_engineering", "quality", "product"],
+        "trust_level": "expert_classic",
+        "noise_risk": "low",
+        "bias": "independent_expert",
+        "editorial_role": "Karl Wiegers articles on requirements engineering, software requirements, business analysis, quality, product design, and software process practice",
+        "source_context": "Process Impact links readers to Karl Wiegers' Medium article archive for current article access."
+      }
+    },
+    {
+      "name": "ArgonDigital",
+      "url": "https://argondigital.com/blog/feed/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["requirements", "business_analysis", "product_management", "models", "automation"],
+        "trust_level": "expert_consulting",
+        "noise_risk": "medium",
+        "bias": "consulting_vendor",
+        "editorial_role": "requirements consulting, product management, visual models, business analysis methods, and enterprise automation practice"
+      }
+    },
+    {
+      "name": "Jama Software Blog",
+      "url": "https://www.jamasoftware.com/feed/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["requirements", "traceability", "systems_engineering", "regulated_industries", "product_development"],
+        "trust_level": "vendor_editorial",
+        "noise_risk": "medium",
+        "bias": "vendor",
+        "editorial_role": "requirements management, live traceability, systems engineering, compliance, regulated product development, and Jama Connect practice"
+      }
+    },
+    {
+      "name": "Visure Solutions Blog",
+      "url": "https://visuresolutions.com/blog/feed/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["requirements", "traceability", "alm", "regulated_industries", "compliance"],
+        "trust_level": "vendor_editorial",
+        "noise_risk": "medium",
+        "bias": "vendor",
+        "editorial_role": "requirements ALM, traceability, risk, compliance, safety-critical and regulated industry requirements practice"
+      }
+    },
+    {
+      "name": "InfoQ Architecture",
+      "url": "https://feed.infoq.com/architecture",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 12,
+      "metadata": {
+        "tier": 1,
+        "topics": ["architecture", "software_engineering", "systems_design", "enterprise_architecture", "case_studies"],
+        "trust_level": "industry_editorial",
+        "noise_risk": "medium",
+        "bias": "professional_media",
+        "editorial_role": "software architecture, systems design, enterprise architecture, architectural patterns, and engineering case studies adjacent to requirements work"
+      }
+    },
+    {
+      "name": "arc42 Documentation",
+      "url": "https://docs.arc42.org/home/",
+      "source_type": "docs_collection",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 168,
+      "metadata": {
+        "tier": 1,
+        "topics": ["architecture", "documentation", "architecture_decisions", "quality_attributes", "templates"],
+        "trust_level": "primary_framework",
+        "noise_risk": "low",
+        "bias": "framework_authors",
+        "editorial_role": "arc42 architecture documentation template, architecture decision guidance, quality goals, context, constraints, and communication practice",
+        "entry_urls": [
+          {
+            "title": "arc42 Documentation",
+            "url": "https://docs.arc42.org/home/",
+            "summary": "Official arc42 documentation for pragmatic software architecture documentation and communication."
+          }
+        ]
+      }
+    },
+    {
       "name": "OpenAI Cookbook",
       "url": "https://developers.openai.com/cookbook",
       "source_type": "docs_collection",
