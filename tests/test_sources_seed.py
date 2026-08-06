@@ -29,6 +29,7 @@ def test_source_catalog_is_valid() -> None:
             "modernanalyst_html",
             "mindtheproduct_json",
             "ireb_html",
+            "iiba_html",
             "docs_collection",
         }
         assert source["language"] in {"en", "ru"}

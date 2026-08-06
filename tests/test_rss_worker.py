@@ -58,6 +58,7 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
                 {"id": 7, "name": "Docs", "source_type": "docs_collection"},
                 {"id": 8, "name": "Video feed", "source_type": "video_rss"},
                 {"id": 9, "name": "Podcast feed", "source_type": "podcast_rss"},
+                {"id": 10, "name": "IIBA", "source_type": "iiba_html"},
             ]
 
     async def run() -> None:
@@ -70,7 +71,7 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
         worker._fetch_source = fake_fetch_source
         await worker._poll_once()
 
-        assert fetched == [2, 4, 5, 6, 7, 8, 9]
+        assert fetched == [2, 4, 5, 6, 7, 8, 9, 10]
 
     asyncio.run(run())
 
@@ -104,7 +105,7 @@ def test_rss_worker_passes_source_id_to_ingestion(monkeypatch) -> None:
         monkeypatch.setitem(
             __import__("sys").modules,
             "feedparser",
-            types.SimpleNamespace(parse=lambda _url: ParsedFeed()),
+            types.SimpleNamespace(parse=lambda *_args, **_kwargs: ParsedFeed()),
         )
 
         await worker._fetch_source(
@@ -159,7 +160,7 @@ def test_rss_worker_stores_podcast_feed_entries_as_media_links(monkeypatch) -> N
         monkeypatch.setitem(
             __import__("sys").modules,
             "feedparser",
-            types.SimpleNamespace(parse=lambda _url: ParsedFeed()),
+            types.SimpleNamespace(parse=lambda *_args, **_kwargs: ParsedFeed()),
         )
         worker = RSSWorker(db_manager=db, ingest_fn=_unused_ingest_fn)
         await worker._fetch_source(
@@ -360,3 +361,35 @@ def test_rss_worker_parses_ireb_article_listing() -> None:
         "using-ai-to-discover-more-innovative-requirements-from-documents"
     )
     assert "creativity for AI" in entries[0]["fallback_text"]
+
+
+def test_rss_worker_parses_iiba_article_listing() -> None:
+    html = """
+    <section>
+      <article>
+        <h3>Why Good Decisions Don't Hold: A Hidden Gap in Business Analysis</h3>
+        <p>Good decisions often become inconsistent over time because reasoning is not preserved.</p>
+        <a href="/business-analysis-blogs/why-good-decisions-dont-hold/">Read to Learn More</a>
+      </article>
+      <article>
+        <h3>Why AI Fluent Business Analysts Matter More Than Ever</h3>
+        <a href="https://www.iiba.org/business-analysis-blogs/why-ai-fluent-business-analysts-matter-more-than-ever/">
+          Read the Blog
+        </a>
+      </article>
+    </section>
+    """
+
+    entries = RSSWorker._parse_iiba_articles(
+        html,
+        "https://www.iiba.org/business-analysis-blogs/",
+    )
+
+    assert [entry["title"] for entry in entries] == [
+        "Why Good Decisions Don't Hold: A Hidden Gap in Business Analysis",
+        "Why AI Fluent Business Analysts Matter More Than Ever",
+    ]
+    assert entries[0]["link"] == (
+        "https://www.iiba.org/business-analysis-blogs/why-good-decisions-dont-hold/"
+    )
+    assert "Good decisions" in entries[0]["summary"]

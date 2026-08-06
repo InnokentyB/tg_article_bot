@@ -376,6 +376,102 @@
       }
     },
     {
+      "name": "Analyst's Corner",
+      "url": "https://medium.com/feed/analysts-corner",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 12,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "requirements", "enterprise_architecture", "quality", "ai_ba"],
+        "trust_level": "expert_community",
+        "noise_risk": "medium",
+        "bias": "professional_community",
+        "editorial_role": "Medium publication with practical business analysis, requirements, quality, enterprise analysis, and AI-in-BA commentary"
+      }
+    },
+    {
+      "name": "BA Times",
+      "url": "https://www.batimes.com/feed/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 12,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "requirements", "agile", "product", "process"],
+        "trust_level": "industry_editorial",
+        "noise_risk": "medium",
+        "bias": "professional_media",
+        "editorial_role": "business analysis industry articles, practitioner guidance, requirements practice, agile BA work, and expert columns"
+      }
+    },
+    {
+      "name": "Bridging the Gap",
+      "url": "https://www.bridging-the-gap.com/feed/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "career", "requirements", "stakeholders", "practice"],
+        "trust_level": "expert_training",
+        "noise_risk": "medium",
+        "bias": "training_vendor",
+        "editorial_role": "Laura Brandenburg and Bridging the Gap practical BA career, elicitation, stakeholder, and analysis technique guidance"
+      }
+    },
+    {
+      "name": "IIBA Analyst Catalyst",
+      "url": "https://www.iiba.org/business-analysis-blogs/",
+      "source_type": "iiba_html",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "profession", "standards", "certification", "ai_ba"],
+        "trust_level": "institutional",
+        "noise_risk": "low",
+        "bias": "professional_institute",
+        "editorial_role": "official IIBA Analyst Catalyst blog for business analysis standards, profession framing, techniques, certification, and AI-fluency signals"
+      }
+    },
+    {
+      "name": "Adrian Reed",
+      "url": "https://www.adrianreed.co.uk/feed/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "business_change", "requirements", "ethics", "consulting"],
+        "trust_level": "expert",
+        "noise_risk": "low",
+        "bias": "independent_consulting",
+        "editorial_role": "Adrian Reed's practical business analysis and business change essays with strong framing and practitioner nuance"
+      }
+    },
+    {
+      "name": "IAG Consulting BA Posts",
+      "url": "https://www.iag.biz/category/ba-posts/feed/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "requirements", "lean_agile", "business_architecture", "consulting"],
+        "trust_level": "expert_consulting",
+        "noise_risk": "low",
+        "bias": "consulting_vendor",
+        "editorial_role": "requirements-driven business analysis, discovery, agile BA, business architecture, and consulting practice"
+      }
+    },
+    {
       "name": "OpenAI Cookbook",
       "url": "https://developers.openai.com/cookbook",
       "source_type": "docs_collection",
@@ -578,20 +674,6 @@
         "trust_level": "editorial",
         "noise_risk": "medium",
         "bias": "editorial"
-      }
-    },
-    {
-      "name": "BA Times",
-      "url": "https://www.batimes.com/",
-      "source_type": "manual_web",
-      "language": "en",
-      "reason_not_active": "Useful business analysis publication, but its RSS endpoint returned 403 during verification on 2026-07-24.",
-      "metadata": {
-        "tier": 2,
-        "topics": ["business_analysis", "requirements", "product", "process"],
-        "trust_level": "industry_editorial",
-        "noise_risk": "medium",
-        "bias": "professional_media"
       }
     }
   ]

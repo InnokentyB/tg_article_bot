@@ -219,6 +219,60 @@ INSERT INTO sources (
     '{"tier": 1, "topics": ["requirements", "business_analysis", "product", "quality"], "trust_level": "expert_community", "noise_risk": "low", "bias": "professional_community", "editorial_role": "requirements engineering, elicitation, business analysis, validation, and AI-in-RE practice"}'
   ),
   (
+    'Analyst''s Corner',
+    'https://medium.com/feed/analysts-corner',
+    'rss',
+    'en',
+    12,
+    TRUE,
+    '{"tier": 1, "topics": ["business_analysis", "requirements", "enterprise_architecture", "quality", "ai_ba"], "trust_level": "expert_community", "noise_risk": "medium", "bias": "professional_community", "editorial_role": "Medium publication with practical business analysis, requirements, quality, enterprise analysis, and AI-in-BA commentary"}'
+  ),
+  (
+    'BA Times',
+    'https://www.batimes.com/feed/',
+    'rss',
+    'en',
+    12,
+    TRUE,
+    '{"tier": 1, "topics": ["business_analysis", "requirements", "agile", "product", "process"], "trust_level": "industry_editorial", "noise_risk": "medium", "bias": "professional_media", "editorial_role": "business analysis industry articles, practitioner guidance, requirements practice, agile BA work, and expert columns"}'
+  ),
+  (
+    'Bridging the Gap',
+    'https://www.bridging-the-gap.com/feed/',
+    'rss',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["business_analysis", "career", "requirements", "stakeholders", "practice"], "trust_level": "expert_training", "noise_risk": "medium", "bias": "training_vendor", "editorial_role": "Laura Brandenburg and Bridging the Gap practical BA career, elicitation, stakeholder, and analysis technique guidance"}'
+  ),
+  (
+    'IIBA Analyst Catalyst',
+    'https://www.iiba.org/business-analysis-blogs/',
+    'iiba_html',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["business_analysis", "profession", "standards", "certification", "ai_ba"], "trust_level": "institutional", "noise_risk": "low", "bias": "professional_institute", "editorial_role": "official IIBA Analyst Catalyst blog for business analysis standards, profession framing, techniques, certification, and AI-fluency signals"}'
+  ),
+  (
+    'Adrian Reed',
+    'https://www.adrianreed.co.uk/feed/',
+    'rss',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["business_analysis", "business_change", "requirements", "ethics", "consulting"], "trust_level": "expert", "noise_risk": "low", "bias": "independent_consulting", "editorial_role": "Adrian Reed''s practical business analysis and business change essays with strong framing and practitioner nuance"}'
+  ),
+  (
+    'IAG Consulting BA Posts',
+    'https://www.iag.biz/category/ba-posts/feed/',
+    'rss',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["business_analysis", "requirements", "lean_agile", "business_architecture", "consulting"], "trust_level": "expert_consulting", "noise_risk": "low", "bias": "consulting_vendor", "editorial_role": "requirements-driven business analysis, discovery, agile BA, business architecture, and consulting practice"}'
+  ),
+  (
     'OpenAI Cookbook',
     'https://developers.openai.com/cookbook',
     'docs_collection',

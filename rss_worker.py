@@ -107,6 +107,7 @@ class RSSWorker:
             "modernanalyst_html",
             "mindtheproduct_json",
             "ireb_html",
+            "iiba_html",
             "docs_collection",
         }
         supported_sources = [
@@ -154,6 +155,9 @@ class RSSWorker:
         if source_type == "ireb_html":
             await self._fetch_ireb_source(source)
             return
+        if source_type == "iiba_html":
+            await self._fetch_iiba_source(source)
+            return
         if source_type == "docs_collection":
             await self._fetch_docs_collection_source(source)
             return
@@ -178,7 +182,16 @@ class RSSWorker:
             return
 
         try:
-            parsed_feed = feedparser.parse(feed_url)
+            parsed_feed = feedparser.parse(
+                feed_url,
+                request_headers={
+                    "User-Agent": (
+                        "Mozilla/5.0 (compatible; TGArticlesBot/1.0; "
+                        "+https://github.com/InnokentyB/tg_article_bot)"
+                    ),
+                    "Accept": "application/rss+xml,application/atom+xml,text/xml,*/*",
+                },
+            )
         except Exception as exc:
             logger.error(
                 "[RSSWorker] source_id=%d failed to parse feed %s: %s",
@@ -492,6 +505,38 @@ class RSSWorker:
 
         await self._ingest_entries(source_id, source_name, language, entries, "ireb_html_worker")
 
+    async def _fetch_iiba_source(self, source: dict) -> None:
+        """Crawl IIBA Analyst Catalyst article listing."""
+        source_id: int = source["id"]
+        listing_url: str = source.get("url", "")
+        source_name: str = source.get("name", listing_url)
+        language: Optional[str] = source.get("language")
+
+        logger.info(
+            "[RSSWorker] Crawling IIBA source_id=%d name=%r url=%s",
+            source_id,
+            source_name,
+            listing_url,
+        )
+
+        try:
+            html = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._fetch_html,
+                listing_url,
+            )
+            entries = self._parse_iiba_articles(html, listing_url)[: self._fetch_limit]
+        except Exception as exc:
+            logger.error(
+                "[RSSWorker] source_id=%d failed to parse IIBA listing %s: %s",
+                source_id,
+                listing_url,
+                exc,
+            )
+            return
+
+        await self._ingest_entries(source_id, source_name, language, entries, "iiba_html_worker")
+
     async def _fetch_docs_collection_source(self, source: dict) -> None:
         """Crawl a fixed list of official documentation pages from source metadata."""
         source_id: int = source["id"]
@@ -716,6 +761,54 @@ class RSSWorker:
             }
 
         return list(entries_by_url.values())
+
+    @classmethod
+    def _parse_iiba_articles(cls, html: str, listing_url: str) -> list[dict]:
+        """Extract article candidates from IIBA Analyst Catalyst HTML."""
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html or "", "html.parser")
+        entries_by_url: dict[str, dict] = {}
+
+        for anchor in soup.find_all("a", href=True):
+            href = anchor["href"]
+            absolute_url = urljoin(listing_url, href)
+            parsed = urlparse(absolute_url)
+            if parsed.netloc.lower() not in {"www.iiba.org", "iiba.org"}:
+                continue
+            if "/business-analysis-blogs/" not in parsed.path:
+                continue
+            if parsed.path.rstrip("/") == "/business-analysis-blogs":
+                continue
+
+            title = cls._strip_html(anchor.get_text(" ", strip=True))
+            if not title or title.lower() in {"read the blog", "read to learn more", "learn more"}:
+                title = cls._find_iiba_article_title(anchor)
+            if not title or absolute_url in entries_by_url:
+                continue
+
+            summary = cls._find_nearby_summary(anchor)
+            entries_by_url[absolute_url] = {
+                "title": title,
+                "link": absolute_url,
+                "summary": summary,
+                "fallback_text": "\n\n".join(part for part in (title, summary) if part),
+            }
+
+        return list(entries_by_url.values())
+
+    @classmethod
+    def _find_iiba_article_title(cls, anchor) -> Optional[str]:
+        card = anchor.find_parent(["article", "li", "div", "section"])
+        if not card:
+            return None
+        for selector in ("h1", "h2", "h3", "h4", ".h1", ".h2", ".h3", ".h4"):
+            element = card.select_one(selector)
+            if element:
+                title = cls._strip_html(element.get_text(" ", strip=True))
+                if title and title.lower() not in {"read the blog", "read to learn more", "learn more"}:
+                    return title
+        return None
 
     @classmethod
     def _find_ireb_article_title(cls, anchor) -> Optional[str]:
