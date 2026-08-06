@@ -30,6 +30,7 @@ def test_source_catalog_is_valid() -> None:
             "mindtheproduct_json",
             "ireb_html",
             "iiba_html",
+            "thebaguide_html",
             "docs_collection",
         }
         assert source["language"] in {"en", "ru"}

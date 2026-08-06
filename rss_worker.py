@@ -23,6 +23,12 @@ logger = logging.getLogger(__name__)
 class RSSWorker:
     """Background RSS crawler that ingests sources on their configured schedule."""
 
+    _USER_AGENT = (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/126.0.0.0 Safari/537.36"
+    )
+
     def __init__(self, db_manager, ingest_fn) -> None:
         """Initialize the worker.
 
@@ -108,6 +114,7 @@ class RSSWorker:
             "mindtheproduct_json",
             "ireb_html",
             "iiba_html",
+            "thebaguide_html",
             "docs_collection",
         }
         supported_sources = [
@@ -158,6 +165,9 @@ class RSSWorker:
         if source_type == "iiba_html":
             await self._fetch_iiba_source(source)
             return
+        if source_type == "thebaguide_html":
+            await self._fetch_thebaguide_source(source)
+            return
         if source_type == "docs_collection":
             await self._fetch_docs_collection_source(source)
             return
@@ -185,11 +195,9 @@ class RSSWorker:
             parsed_feed = feedparser.parse(
                 feed_url,
                 request_headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 (compatible; TGArticlesBot/1.0; "
-                        "+https://github.com/InnokentyB/tg_article_bot)"
-                    ),
+                    "User-Agent": self._USER_AGENT,
                     "Accept": "application/rss+xml,application/atom+xml,text/xml,*/*",
+                    "Accept-Language": "en-US,en;q=0.9",
                 },
             )
         except Exception as exc:
@@ -296,7 +304,14 @@ class RSSWorker:
             return
 
         try:
-            parsed_feed = feedparser.parse(feed_url)
+            parsed_feed = feedparser.parse(
+                feed_url,
+                request_headers={
+                    "User-Agent": self._USER_AGENT,
+                    "Accept": "application/rss+xml,application/atom+xml,text/xml,*/*",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
+            )
         except Exception as exc:
             logger.error("[RSSWorker] media source_id=%d failed to parse feed %s: %s", source_id, feed_url, exc)
             return
@@ -537,6 +552,38 @@ class RSSWorker:
 
         await self._ingest_entries(source_id, source_name, language, entries, "iiba_html_worker")
 
+    async def _fetch_thebaguide_source(self, source: dict) -> None:
+        """Crawl The BA Guide blog listing."""
+        source_id: int = source["id"]
+        listing_url: str = source.get("url", "")
+        source_name: str = source.get("name", listing_url)
+        language: Optional[str] = source.get("language")
+
+        logger.info(
+            "[RSSWorker] Crawling The BA Guide source_id=%d name=%r url=%s",
+            source_id,
+            source_name,
+            listing_url,
+        )
+
+        try:
+            html = await asyncio.get_running_loop().run_in_executor(
+                None,
+                self._fetch_html,
+                listing_url,
+            )
+            entries = self._parse_thebaguide_articles(html, listing_url)[: self._fetch_limit]
+        except Exception as exc:
+            logger.error(
+                "[RSSWorker] source_id=%d failed to parse The BA Guide listing %s: %s",
+                source_id,
+                listing_url,
+                exc,
+            )
+            return
+
+        await self._ingest_entries(source_id, source_name, language, entries, "thebaguide_html_worker")
+
     async def _fetch_docs_collection_source(self, source: dict) -> None:
         """Crawl a fixed list of official documentation pages from source metadata."""
         source_id: int = source["id"]
@@ -657,10 +704,10 @@ class RSSWorker:
             timeout=30,
             headers={
                 "User-Agent": (
-                    "Mozilla/5.0 (compatible; TGArticlesBot/1.0; "
-                    "+https://github.com/InnokentyB/tg_article_bot)"
+                    RSSWorker._USER_AGENT
                 ),
                 "Accept": "text/html,application/xhtml+xml",
+                "Accept-Language": "en-US,en;q=0.9",
             },
         )
         response.raise_for_status()
@@ -675,10 +722,10 @@ class RSSWorker:
             timeout=30,
             headers={
                 "User-Agent": (
-                    "Mozilla/5.0 (compatible; TGArticlesBot/1.0; "
-                    "+https://github.com/InnokentyB/tg_article_bot)"
+                    RSSWorker._USER_AGENT
                 ),
                 "Accept": "application/json,text/plain,*/*",
+                "Accept-Language": "en-US,en;q=0.9",
             },
         )
         response.raise_for_status()
@@ -796,6 +843,61 @@ class RSSWorker:
             }
 
         return list(entries_by_url.values())
+
+    @classmethod
+    def _parse_thebaguide_articles(cls, html: str, listing_url: str) -> list[dict]:
+        """Extract article candidates from The BA Guide blog listing HTML."""
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html or "", "html.parser")
+        entries_by_url: dict[str, dict] = {}
+        ignored_paths = {
+            "/blog",
+            "/blog/",
+            "/blog/category/all",
+            "/blog/category/all/",
+        }
+
+        for anchor in soup.find_all("a", href=True):
+            href = anchor["href"]
+            absolute_url = urljoin(listing_url, href)
+            parsed = urlparse(absolute_url)
+            if parsed.netloc.lower() not in {"thebaguide.com", "www.thebaguide.com"}:
+                continue
+            path = parsed.path.rstrip("/") or "/"
+            if not path.startswith("/blog/"):
+                continue
+            if path in ignored_paths or "/blog/category/" in path:
+                continue
+
+            title = cls._strip_html(anchor.get_text(" ", strip=True))
+            if not title or title.lower() in {"read more", "continue reading"}:
+                title = cls._find_thebaguide_article_title(anchor)
+            if not title or absolute_url in entries_by_url:
+                continue
+
+            summary = cls._find_nearby_summary(anchor)
+            entries_by_url[absolute_url] = {
+                "title": title,
+                "link": absolute_url,
+                "summary": summary,
+                "fallback_text": "\n\n".join(part for part in (title, summary) if part),
+            }
+
+        return list(entries_by_url.values())
+
+    @classmethod
+    def _find_thebaguide_article_title(cls, anchor) -> Optional[str]:
+        card = anchor.find_parent(["article", "li", "div", "section"])
+        if not card:
+            return None
+        for selector in ("h1", "h2", "h3", ".entry-title", ".post-title"):
+            element = card.select_one(selector)
+            if element:
+                title = cls._strip_html(element.get_text(" ", strip=True))
+                if title and title.lower() not in {"read more", "continue reading"}:
+                    return title
+        return None
 
     @classmethod
     def _find_iiba_article_title(cls, anchor) -> Optional[str]:

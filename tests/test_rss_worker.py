@@ -59,6 +59,7 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
                 {"id": 8, "name": "Video feed", "source_type": "video_rss"},
                 {"id": 9, "name": "Podcast feed", "source_type": "podcast_rss"},
                 {"id": 10, "name": "IIBA", "source_type": "iiba_html"},
+                {"id": 11, "name": "The BA Guide", "source_type": "thebaguide_html"},
             ]
 
     async def run() -> None:
@@ -71,7 +72,7 @@ def test_rss_worker_poll_only_fetches_rss_sources(monkeypatch) -> None:
         worker._fetch_source = fake_fetch_source
         await worker._poll_once()
 
-        assert fetched == [2, 4, 5, 6, 7, 8, 9, 10]
+        assert fetched == [2, 4, 5, 6, 7, 8, 9, 10, 11]
 
     asyncio.run(run())
 
@@ -393,3 +394,41 @@ def test_rss_worker_parses_iiba_article_listing() -> None:
         "https://www.iiba.org/business-analysis-blogs/why-good-decisions-dont-hold/"
     )
     assert "Good decisions" in entries[0]["summary"]
+
+
+def test_rss_worker_parses_thebaguide_blog_listing() -> None:
+    html = """
+    <main>
+      <a href="/blog/category/businessanalysis/">Business Analysis</a>
+      <article>
+        <h2>
+          <a href="/blog/top-7-reasons-you-should-become-a-business-analyst/">
+            Top 7 Reasons You Should Become a Business Analyst
+          </a>
+        </h2>
+        <p>Business analysis is a growing career path with practical impact.</p>
+      </article>
+      <article>
+        <h2>How Do You Start a Business Analysis Project?</h2>
+        <p>Start with stakeholders, goals, scope, and useful discovery questions.</p>
+        <a href="https://thebaguide.com/blog/how-do-you-start-a-business-analysis-project/">
+          Read More
+        </a>
+      </article>
+      <a href="https://example.com/blog/external/">External</a>
+    </main>
+    """
+
+    entries = RSSWorker._parse_thebaguide_articles(
+        html,
+        "https://thebaguide.com/blog/",
+    )
+
+    assert [entry["title"] for entry in entries] == [
+        "Top 7 Reasons You Should Become a Business Analyst",
+        "How Do You Start a Business Analysis Project?",
+    ]
+    assert entries[0]["link"] == (
+        "https://thebaguide.com/blog/top-7-reasons-you-should-become-a-business-analyst/"
+    )
+    assert "growing career path" in entries[0]["fallback_text"]

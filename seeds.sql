@@ -255,6 +255,15 @@ INSERT INTO sources (
     '{"tier": 1, "topics": ["business_analysis", "profession", "standards", "certification", "ai_ba"], "trust_level": "institutional", "noise_risk": "low", "bias": "professional_institute", "editorial_role": "official IIBA Analyst Catalyst blog for business analysis standards, profession framing, techniques, certification, and AI-fluency signals"}'
   ),
   (
+    'Adrian Reed',
+    'https://www.adrianreed.co.uk/feed/',
+    'rss',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["business_analysis", "business_change", "requirements", "ethics", "consulting"], "trust_level": "expert", "noise_risk": "low", "bias": "independent_consulting", "editorial_role": "Adrian Reed''s practical business analysis and business change essays with strong framing and practitioner nuance"}'
+  ),
+  (
     'IAG Consulting BA Posts',
     'https://www.iag.biz/category/ba-posts/feed/',
     'rss',
@@ -289,6 +298,15 @@ INSERT INTO sources (
     24,
     TRUE,
     '{"tier": 1, "topics": ["business_analysis", "requirements", "systems_analysis", "product_ownership", "product_management"], "trust_level": "expert_practitioner", "noise_risk": "low", "bias": "independent_practitioner", "editorial_role": "requirements engineering, systems analysis, product ownership, product management, and business analysis practice"}'
+  ),
+  (
+    'The BA Guide',
+    'https://thebaguide.com/blog/',
+    'thebaguide_html',
+    'en',
+    24,
+    TRUE,
+    '{"tier": 1, "topics": ["business_analysis", "certification", "career", "agile", "practice"], "trust_level": "expert_training", "noise_risk": "medium", "bias": "training_vendor", "editorial_role": "business analysis education, certification guidance, career growth, agile, and practical BA articles"}'
   ),
   (
     'Karl Wiegers / Process Impact',

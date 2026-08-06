@@ -444,7 +444,7 @@
       "url": "https://www.adrianreed.co.uk/feed/",
       "source_type": "rss",
       "language": "en",
-      "is_active": false,
+      "is_active": true,
       "fetch_interval_hours": 24,
       "metadata": {
         "tier": 1,
@@ -452,8 +452,7 @@
         "trust_level": "expert",
         "noise_risk": "low",
         "bias": "independent_consulting",
-        "editorial_role": "Adrian Reed's practical business analysis and business change essays with strong framing and practitioner nuance",
-        "inactive_reason": "The site currently returns blocked pages or malformed feed content from the crawler environment."
+        "editorial_role": "Adrian Reed's practical business analysis and business change essays with strong framing and practitioner nuance"
       }
     },
     {
@@ -523,9 +522,9 @@
     {
       "name": "The BA Guide",
       "url": "https://thebaguide.com/blog/",
-      "source_type": "rss",
+      "source_type": "thebaguide_html",
       "language": "en",
-      "is_active": false,
+      "is_active": true,
       "fetch_interval_hours": 24,
       "metadata": {
         "tier": 1,
@@ -533,8 +532,7 @@
         "trust_level": "expert_training",
         "noise_risk": "medium",
         "bias": "training_vendor",
-        "editorial_role": "business analysis education, certification guidance, career growth, agile, and practical BA articles",
-        "inactive_reason": "Site currently returns HTTP 403 for direct blog and feed requests from the crawler environment."
+        "editorial_role": "business analysis education, certification guidance, career growth, agile, and practical BA articles"
       }
     },
     {
