@@ -444,7 +444,7 @@
       "url": "https://www.adrianreed.co.uk/feed/",
       "source_type": "rss",
       "language": "en",
-      "is_active": true,
+      "is_active": false,
       "fetch_interval_hours": 24,
       "metadata": {
         "tier": 1,
@@ -452,7 +452,8 @@
         "trust_level": "expert",
         "noise_risk": "low",
         "bias": "independent_consulting",
-        "editorial_role": "Adrian Reed's practical business analysis and business change essays with strong framing and practitioner nuance"
+        "editorial_role": "Adrian Reed's practical business analysis and business change essays with strong framing and practitioner nuance",
+        "inactive_reason": "The site currently returns blocked pages or malformed feed content from the crawler environment."
       }
     },
     {
@@ -469,6 +470,105 @@
         "noise_risk": "low",
         "bias": "consulting_vendor",
         "editorial_role": "requirements-driven business analysis, discovery, agile BA, business architecture, and consulting practice"
+      }
+    },
+    {
+      "name": "Business Analyst Mentor",
+      "url": "https://businessanalystmentor.com/blog/feed/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "career", "certification", "agile", "practice"],
+        "trust_level": "expert_training",
+        "noise_risk": "medium",
+        "bias": "training_vendor",
+        "editorial_role": "business analysis career development, certification guidance, agile BA practice, tools, and practical mentoring content"
+      }
+    },
+    {
+      "name": "Business Analyst Learnings",
+      "url": "https://www.businessanalystlearnings.com/blog?format=rss",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "requirements", "career", "agile", "techniques"],
+        "trust_level": "practitioner_blog",
+        "noise_risk": "medium",
+        "bias": "independent_community",
+        "editorial_role": "practical business analysis advice, requirements tips, career notes, BA techniques, and applied analysis examples"
+      }
+    },
+    {
+      "name": "Passionate BA",
+      "url": "https://passionateba.pro/blog/feed/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": true,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "requirements", "systems_analysis", "product_ownership", "product_management"],
+        "trust_level": "expert_practitioner",
+        "noise_risk": "low",
+        "bias": "independent_practitioner",
+        "editorial_role": "requirements engineering, systems analysis, product ownership, product management, and business analysis practice"
+      }
+    },
+    {
+      "name": "The BA Guide",
+      "url": "https://thebaguide.com/blog/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": false,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "certification", "career", "agile", "practice"],
+        "trust_level": "expert_training",
+        "noise_risk": "medium",
+        "bias": "training_vendor",
+        "editorial_role": "business analysis education, certification guidance, career growth, agile, and practical BA articles",
+        "inactive_reason": "Site currently returns HTTP 403 for direct blog and feed requests from the crawler environment."
+      }
+    },
+    {
+      "name": "The Digital Business Analyst",
+      "url": "https://thedigitalbusinessanalyst.co.uk/",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": false,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "digital_transformation", "product", "data", "agile"],
+        "trust_level": "practitioner_blog",
+        "noise_risk": "medium",
+        "bias": "independent_practitioner",
+        "editorial_role": "digital business analysis, transformation, product and analysis practice articles",
+        "inactive_reason": "HTTPS requests currently fail TLS handshake and HTTP returns an access error from the crawler environment."
+      }
+    },
+    {
+      "name": "The Uncommon League",
+      "url": "https://theuncommonleague.com/articles",
+      "source_type": "rss",
+      "language": "en",
+      "is_active": false,
+      "fetch_interval_hours": 24,
+      "metadata": {
+        "tier": 1,
+        "topics": ["business_analysis", "leadership", "career", "practice", "community"],
+        "trust_level": "expert_training",
+        "noise_risk": "medium",
+        "bias": "training_vendor",
+        "editorial_role": "business analysis articles, professional growth, facilitation, leadership, and practitioner guidance",
+        "inactive_reason": "Domain does not currently resolve from the crawler environment; keep as a candidate until a working URL/feed is confirmed."
       }
     },
     {
