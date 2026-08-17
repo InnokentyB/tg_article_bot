@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DailyDigestConfig:
-    period_days: int = 3
+    period_days: int = 1
     max_articles: int = 5
     topic: str = "AI agents, knowledge bases, requirements, product and engineering practice"
     language: Optional[str] = None
@@ -27,7 +27,7 @@ class DailyDigestConfig:
     @classmethod
     def from_env(cls) -> "DailyDigestConfig":
         return cls(
-            period_days=int(os.getenv("DAILY_DIGEST_PERIOD_DAYS", "3")),
+            period_days=int(os.getenv("DAILY_DIGEST_PERIOD_DAYS", "1")),
             max_articles=int(os.getenv("DAILY_DIGEST_MAX_ARTICLES", "5")),
             topic=os.getenv(
                 "DAILY_DIGEST_TOPIC",
@@ -395,7 +395,7 @@ class DailyDigestJob:
         )
         return await self._db.create_review(
             topic_query_id=topic_query_id,
-            title=f"Читатель Use Case: дайджест за {self._config.period_days} дня — {digest_date.isoformat()}",
+            title=f"Читатель Use Case: {self._daily_window_label()} — {digest_date.isoformat()}",
             review_markdown=generated["review_markdown"],
             telegram_draft=telegram_message,
             selected_sources=[
@@ -445,7 +445,7 @@ class DailyDigestJob:
         ranked_articles: list[dict[str, Any]],
     ) -> str:
         lines = [
-            f"Читатель Use Case: дайджест за {self._config.period_days} дня",
+            f"Читатель Use Case: {self._daily_window_label()}",
             "",
             f"{len(ranked_articles)} лучших материалов:",
         ]
@@ -687,6 +687,13 @@ class DailyDigestJob:
         url = article.get("canonical_url") or article.get("original_link") or ""
         url = url.split("#", 1)[0].split("?", 1)[0].strip().rstrip("/")
         return url.lower()
+
+    def _daily_window_label(self) -> str:
+        if self._config.period_days == 1:
+            return "дайджест за день"
+        if 2 <= self._config.period_days <= 4:
+            return f"дайджест за {self._config.period_days} дня"
+        return f"дайджест за {self._config.period_days} дней"
 
 
 class DailyDigestWorker:

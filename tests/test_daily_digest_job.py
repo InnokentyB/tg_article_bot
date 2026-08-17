@@ -11,6 +11,13 @@ from daily_digest_job import (
 )
 
 
+def test_daily_digest_defaults_to_one_day_window(monkeypatch) -> None:
+    monkeypatch.delenv("DAILY_DIGEST_PERIOD_DAYS", raising=False)
+
+    assert DailyDigestConfig().period_days == 1
+    assert DailyDigestConfig.from_env().period_days == 1
+
+
 def _candidate(
     article_id: int,
     title: str,
@@ -70,7 +77,7 @@ def test_daily_digest_ranks_substantial_tier_one_embedded_articles() -> None:
 def test_daily_digest_messages_split_top_five_and_best_review() -> None:
     job = DailyDigestJob(
         db_manager=object(),
-        config=DailyDigestConfig(period_days=3, max_articles=5),
+        config=DailyDigestConfig(period_days=1, max_articles=5),
     )
     ranked = [
         _candidate(index, f"Article {index}", text="AI agents " * 300)
@@ -94,6 +101,8 @@ def test_daily_digest_messages_split_top_five_and_best_review() -> None:
     )
 
     assert "5 лучших материалов" in digest_message
+    assert "дайджест за день" in digest_message
+    assert "дайджест за 3 дня" not in digest_message
     assert "Article 1" not in digest_message
     assert "1. Article 2" in digest_message
     assert "5. Article 6" in digest_message
@@ -127,7 +136,7 @@ def test_daily_digest_note_never_falls_back_to_english_summary() -> None:
 def test_daily_digest_filters_historical_backfill_by_url_date() -> None:
     job = DailyDigestJob(
         db_manager=object(),
-        config=DailyDigestConfig(period_days=3, max_articles=5),
+        config=DailyDigestConfig(period_days=1, max_articles=5),
     )
     historical = _candidate(
         1,
