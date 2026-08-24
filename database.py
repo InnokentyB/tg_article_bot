@@ -16,12 +16,25 @@ class DatabaseManager:
     def __init__(self):
         self.pool = None
         self.db_url = os.getenv('DATABASE_URL')
+        self.pool_min_size = max(0, int(os.getenv('DB_POOL_MIN_SIZE', '1')))
+        self.pool_max_size = max(
+            self.pool_min_size,
+            int(os.getenv('DB_POOL_MAX_SIZE', '5')),
+        )
         
     async def initialize(self):
         """Initialize database connection pool"""
         try:
-            self.pool = await asyncpg.create_pool(self.db_url)
-            logger.info("Database connection pool created successfully")
+            self.pool = await asyncpg.create_pool(
+                self.db_url,
+                min_size=self.pool_min_size,
+                max_size=self.pool_max_size,
+            )
+            logger.info(
+                "Database connection pool created successfully (min=%s max=%s)",
+                self.pool_min_size,
+                self.pool_max_size,
+            )
         except Exception as e:
             logger.error(f"Failed to create database pool: {e}")
             raise
