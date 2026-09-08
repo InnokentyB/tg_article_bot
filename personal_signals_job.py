@@ -213,10 +213,7 @@ class PersonalSignalsJob:
         )
 
     def _score_article(self, article: dict[str, Any]) -> tuple[float, list[str], list[str]]:
-        text = self._normalize_for_match(" ".join(
-            str(article.get(field) or "")
-            for field in ("title", "summary", "text")
-        ))
+        text = self._signal_surface(article)
         source_metadata = self._metadata_dict(article.get("source_metadata"))
         terms = self._topic_terms(self._config.topics)
         matched_terms = [term for term in terms if self._term_matches(text, term)]
@@ -388,6 +385,21 @@ class PersonalSignalsJob:
         url = article.get("canonical_url") or article.get("original_link") or ""
         url = url.split("#", 1)[0].split("?", 1)[0].strip().rstrip("/")
         return url.lower()
+
+    @staticmethod
+    def _signal_surface(article: dict[str, Any]) -> str:
+        source_metadata = PersonalSignalsJob._metadata_dict(article.get("source_metadata"))
+        return PersonalSignalsJob._normalize_for_match(
+            " ".join(
+                [
+                    str(article.get("title") or ""),
+                    str(article.get("summary") or ""),
+                    str(article.get("source_name") or ""),
+                    str(article.get("source") or ""),
+                    json.dumps(source_metadata, ensure_ascii=False),
+                ]
+            )
+        )
 
     @staticmethod
     def _public_article(article: dict[str, Any]) -> dict[str, Any]:

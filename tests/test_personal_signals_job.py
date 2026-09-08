@@ -71,6 +71,23 @@ def test_personal_signals_do_not_match_terms_inside_other_words() -> None:
     assert ranked == []
 
 
+def test_personal_signals_do_not_match_only_deep_body_text() -> None:
+    job = PersonalSignalsJob(
+        db_manager=object(),
+        config=PersonalSignalsConfig(topics="rag", min_score=0.1),
+    )
+    article = _article(
+        1,
+        "Generic engineering update",
+        text=("plain implementation notes " * 80) + " rag " + ("more notes " * 80),
+    )
+    article["summary"] = "A general update without the project term."
+
+    ranked = job._rank_candidates([article])
+
+    assert ranked == []
+
+
 def test_personal_signals_match_russian_ai_agent_terms_with_typographic_hyphen() -> None:
     job = PersonalSignalsJob(
         db_manager=object(),
