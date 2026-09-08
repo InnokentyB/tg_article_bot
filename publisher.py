@@ -10,9 +10,9 @@ import html
 logger = logging.getLogger(__name__)
 
 class TelegramPublisher:
-    def __init__(self):
+    def __init__(self, chat_id=None):
         self.token = os.getenv('TELEGRAM_TOKEN')
-        self.chat_id = os.getenv('TELEGRAM_CHAT_ID')
+        self.chat_id = chat_id or os.getenv('TELEGRAM_CHAT_ID')
         self.base_url = f"https://api.telegram.org/bot{self.token}"
         
         if not self.token or not self.chat_id:
@@ -75,13 +75,13 @@ class TelegramPublisher:
             logger.error(f"Error formatting message: {str(e)}")
             return f"Новая статья: {article.get('title', 'Без названия')}\n{article.get('url', '')}"
     
-    def _send_message(self, message, parse_mode='HTML'):
+    def _send_message(self, message, parse_mode='HTML', chat_id=None):
         """Send message to Telegram"""
         try:
             url = f"{self.base_url}/sendMessage"
             
             data = {
-                'chat_id': self.chat_id,
+                'chat_id': chat_id or self.chat_id,
                 'text': message,
                 'parse_mode': parse_mode,
                 'disable_web_page_preview': False,

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import logging
 import os
 from typing import Optional
@@ -23,7 +24,16 @@ class TelegramPostDispatcher:
 
         for post in posts:
             try:
-                ok = await loop.run_in_executor(None, self._publish_message, post["message"])
+                target_chat_id = None
+                metadata = post.get("metadata") or {}
+                if isinstance(metadata, str):
+                    try:
+                        metadata = json.loads(metadata)
+                    except json.JSONDecodeError:
+                        metadata = {}
+                if isinstance(metadata, dict):
+                    target_chat_id = metadata.get("target_chat_id")
+                ok = await loop.run_in_executor(None, self._publish_message, post["message"], target_chat_id)
                 if not ok:
                     raise RuntimeError("Telegram API returned an unsuccessful response")
             except Exception as exc:
@@ -47,10 +57,10 @@ class TelegramPostDispatcher:
 
         return sent
 
-    def _publish_message(self, message: str) -> bool:
+    def _publish_message(self, message: str, target_chat_id: Optional[str] = None) -> bool:
         from publisher import TelegramPublisher
 
-        publisher = TelegramPublisher()
+        publisher = TelegramPublisher(chat_id=target_chat_id)
         ok = True
         for chunk in self._split_telegram_message(message):
             ok = publisher._send_message(html.escape(chunk), parse_mode="HTML") and ok

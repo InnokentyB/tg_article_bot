@@ -23,6 +23,7 @@ rss_worker = None
 gmail_worker = None
 daily_digest_worker = None
 weekly_digest_worker = None
+personal_signals_worker = None
 source_metrics_worker = None
 telegram_post_worker = None
 media_transcription_worker = None
@@ -78,7 +79,7 @@ async def lifespan(app: FastAPI):
         db_manager = None
 
     # Start background RSS worker (only when DB is available)
-    global rss_worker, gmail_worker, daily_digest_worker, weekly_digest_worker, source_metrics_worker, telegram_post_worker, media_transcription_worker, media_selection_worker
+    global rss_worker, gmail_worker, daily_digest_worker, weekly_digest_worker, personal_signals_worker, source_metrics_worker, telegram_post_worker, media_transcription_worker, media_selection_worker
     if db_manager:
         try:
             from rss_worker import RSSWorker
@@ -139,6 +140,15 @@ async def lifespan(app: FastAPI):
             telegram_post_worker = None
 
         try:
+            from personal_signals_job import PersonalSignalsWorker
+            personal_signals_worker = PersonalSignalsWorker(db_manager)
+            personal_signals_worker.start()
+            logger.info("✅ Personal signals worker configured")
+        except Exception as personal_signals_err:
+            logger.warning(f"⚠️ Personal signals worker failed to start: {personal_signals_err}")
+            personal_signals_worker = None
+
+        try:
             from daily_digest_job import WeeklyDigestWorker
             weekly_digest_worker = WeeklyDigestWorker(db_manager)
             weekly_digest_worker.start()
@@ -181,6 +191,9 @@ async def lifespan(app: FastAPI):
     if weekly_digest_worker:
         weekly_digest_worker.stop()
         logger.info("Weekly digest worker stopped")
+    if personal_signals_worker:
+        personal_signals_worker.stop()
+        logger.info("Personal signals worker stopped")
     if source_metrics_worker:
         source_metrics_worker.stop()
         logger.info("Source metrics worker stopped")
@@ -1256,6 +1269,41 @@ async def run_weekly_digest_job(request_data: dict, auth: bool = Depends(verify_
     publish = bool(request_data.get("publish", False))
 
     job = WeeklyThematicDigestJob(db_manager, config=config)
+    return await job.run(dry_run=dry_run, publish=publish)
+
+
+@app.post("/jobs/personal-signals/run")
+async def run_personal_signals_job(request_data: dict, auth: bool = Depends(verify_api_key)):
+    """Run the private personal-signal inbox job manually.
+
+    Defaults to dry-run. To send to a private Telegram chat, configure
+    PERSONAL_SIGNALS_TELEGRAM_CHAT_ID and send {"dry_run": false, "publish": true}.
+    """
+    global db_manager
+
+    if not db_manager:
+        raise HTTPException(status_code=503, detail="Database not available")
+
+    from personal_signals_job import PersonalSignalsConfig, PersonalSignalsJob
+
+    config = PersonalSignalsConfig.from_env()
+    if request_data.get("period_hours") is not None:
+        config.period_hours = max(1, min(int(request_data["period_hours"]), 24 * 14))
+    if request_data.get("max_articles") is not None:
+        config.max_articles = max(1, min(int(request_data["max_articles"]), 20))
+    if request_data.get("min_score") is not None:
+        config.min_score = float(request_data["min_score"])
+    if request_data.get("topics"):
+        config.topics = str(request_data["topics"]).strip()
+    if "language" in request_data:
+        config.language = request_data.get("language") or None
+    if "include_reviewed" in request_data:
+        config.include_reviewed = bool(request_data.get("include_reviewed"))
+
+    dry_run = bool(request_data.get("dry_run", True))
+    publish = bool(request_data.get("publish", False))
+
+    job = PersonalSignalsJob(db_manager, config=config)
     return await job.run(dry_run=dry_run, publish=publish)
 
 
