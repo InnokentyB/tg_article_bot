@@ -111,10 +111,40 @@ def test_daily_digest_messages_split_top_five_and_best_review() -> None:
     assert "Разбор статьи дня выйдет отдельным постом" not in digest_message
     assert "Коротко: Русское пояснение для дайджеста." in digest_message
     assert "Критический разбор лучшей статьи." not in digest_message
-    assert "статья дня" in review_message
+    assert "статья дня" not in review_message
     assert "Дата отбора" not in review_message
     assert "Article 1" in review_message
     assert "Критический разбор лучшей статьи." in review_message
+
+
+def test_article_review_does_not_repeat_title_review_label_or_source() -> None:
+    job = DailyDigestJob(db_manager=object(), config=DailyDigestConfig())
+    article = _candidate(
+        1,
+        "От рекомендаций к графу патогенеза",
+        text="AI agents " * 300,
+    )
+    article["canonical_url"] = "https://habr.com/ru/articles/1078858/?utm_source=habrahabr&utm_medium=rss"
+    review = """Разбор:
+Разбор лучшей статьи дня: «От рекомендаций к графу патогенеза»
+
+Хороший инженерный кейс о снижении галлюцинаций.
+
+Источник: https://habr.com/ru/articles/1078858/?utm_source=habrahabr&utm_medium=rss"""
+
+    message = job._build_review_telegram_message(
+        digest_date=datetime(2026, 9, 8, tzinfo=timezone.utc).date(),
+        best_article=article,
+        best_review=review,
+    )
+
+    assert message.count(article["title"]) == 1
+    assert "Читатель Use Case" not in message
+    assert "Разбор:" not in message
+    assert "Разбор лучшей статьи дня" not in message
+    assert message.count("https://habr.com/ru/articles/1078858/") == 1
+    assert "utm_" not in message
+    assert message.endswith("Источник: https://habr.com/ru/articles/1078858/")
 
 
 def test_daily_digest_note_never_falls_back_to_english_summary() -> None:

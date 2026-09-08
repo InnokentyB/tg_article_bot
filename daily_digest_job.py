@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 logger = logging.getLogger(__name__)
 
@@ -595,16 +596,55 @@ class DailyDigestJob:
         best_article: dict[str, Any],
         best_review: str,
     ) -> str:
+        title = str(best_article.get("title") or "Без названия").strip()
+        source_url = str(
+            best_article.get("canonical_url") or best_article.get("original_link") or ""
+        ).strip()
+        review = self._clean_review_for_telegram(best_review, title=title)
+        display_url = self._clean_display_url(source_url)
         lines = [
-            "Читатель Use Case: статья дня",
+            title,
             "",
-            best_article.get("title") or "Без названия",
-            best_article.get("canonical_url") or best_article.get("original_link") or "",
-            "",
-            "Разбор:",
-            best_review,
+            review,
         ]
+        if display_url:
+            lines.extend(["", f"Источник: {display_url}"])
         return "\n".join(line for line in lines if line is not None).strip()
+
+    @staticmethod
+    def _clean_review_for_telegram(review: str, *, title: str) -> str:
+        title_key = re.sub(r"[«»\"'*_#]+", "", title).strip().casefold()
+        cleaned_lines = []
+        for raw_line in str(review or "").splitlines():
+            line = raw_line.strip()
+            plain_line = re.sub(r"[«»\"'*_#]+", "", line).strip()
+            line_key = plain_line.casefold()
+            if not line:
+                cleaned_lines.append("")
+                continue
+            if line_key == "разбор:" or line_key == "разбор":
+                continue
+            if line_key.startswith("разбор лучшей статьи дня:"):
+                continue
+            if title_key and line_key == title_key:
+                continue
+            if line_key.startswith("источник:") or re.fullmatch(r"https?://\S+", line):
+                continue
+            cleaned_lines.append(line)
+
+        return "\n".join(cleaned_lines).strip()
+
+    @staticmethod
+    def _clean_display_url(url: str) -> str:
+        if not url:
+            return ""
+        parts = urlsplit(url)
+        query = urlencode([
+            (key, value)
+            for key, value in parse_qsl(parts.query, keep_blank_values=True)
+            if not key.lower().startswith("utm_")
+        ])
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
 
     @staticmethod
     def _build_telegram_message(*, digest_message: str, review_message: str) -> str:

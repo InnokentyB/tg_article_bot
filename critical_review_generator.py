@@ -164,7 +164,10 @@ Editorial standards:
 - Surface hidden assumptions, missing evidence, incentives, or implementation risks.
 - Avoid hype, generic AI enthusiasm, and empty conclusions.
 - Keep the Telegram draft concise, sharp, and publishable after human editing.
-- Preserve source links.
+- The Telegram draft must contain only the review body: do not repeat the article title,
+  do not add headings such as "Разбор", and do not include source links. The publisher
+  adds the title and source exactly once.
+- Preserve source links in review_markdown only.
 
 Return only valid JSON with:
 - title
