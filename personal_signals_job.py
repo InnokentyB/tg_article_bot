@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_PERSONAL_TOPICS = (
     "ai agents, rag, knowledge base, requirements engineering, business analysis, "
     "product management, engineering practice, telegram, content automation, "
-    "summarization, transcription, video, podcast, cloudflare, railway"
+    "summarization, transcription, video, podcast, cloudflare, railway, "
+    "ии-агенты, ии-агентов, агентные системы, нейросети, генеративный интеллект, "
+    "требования, бизнес-анализ, продуктовая аналитика, транскрибация, саммаризация"
 )
 
 
@@ -211,10 +213,10 @@ class PersonalSignalsJob:
         )
 
     def _score_article(self, article: dict[str, Any]) -> tuple[float, list[str], list[str]]:
-        text = " ".join(
+        text = self._normalize_for_match(" ".join(
             str(article.get(field) or "")
             for field in ("title", "summary", "text")
-        ).casefold()
+        ))
         source_metadata = self._metadata_dict(article.get("source_metadata"))
         terms = self._topic_terms(self._config.topics)
         matched_terms = [term for term in terms if self._term_matches(text, term)]
@@ -350,13 +352,23 @@ class PersonalSignalsJob:
 
     @staticmethod
     def _term_matches(text: str, term: str) -> bool:
-        escaped = re.escape(term.casefold())
+        escaped = re.escape(PersonalSignalsJob._normalize_for_match(term))
         return bool(
             re.search(
                 rf"(?<![0-9a-zа-яё]){escaped}(?![0-9a-zа-яё])",
                 text,
                 flags=re.IGNORECASE,
             )
+        )
+
+    @staticmethod
+    def _normalize_for_match(value: str) -> str:
+        return (
+            " ".join(str(value or "").casefold().split())
+            .replace("‑", "-")
+            .replace("–", "-")
+            .replace("—", "-")
+            .replace("ё", "е")
         )
 
     @staticmethod

@@ -71,6 +71,20 @@ def test_personal_signals_do_not_match_terms_inside_other_words() -> None:
     assert ranked == []
 
 
+def test_personal_signals_match_russian_ai_agent_terms_with_typographic_hyphen() -> None:
+    job = PersonalSignalsJob(
+        db_manager=object(),
+        config=PersonalSignalsConfig(topics="ии-агентов", min_score=1.0),
+    )
+
+    ranked = job._rank_candidates(
+        [_article(1, "Архитектура современных ИИ‑агентов")]
+    )
+
+    assert [article["article_id"] for article in ranked] == [1]
+    assert ranked[0]["matched_terms"] == ["ии-агентов"]
+
+
 def test_personal_signals_message_contains_private_inbox_context() -> None:
     job = PersonalSignalsJob(
         db_manager=object(),
