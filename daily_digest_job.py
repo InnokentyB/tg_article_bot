@@ -13,6 +13,8 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from quota_alert import is_insufficient_quota_error, quota_alert_guard
+
 logger = logging.getLogger(__name__)
 
 
@@ -772,6 +774,8 @@ class DailyDigestWorker:
                 break
             except Exception as exc:
                 logger.exception("[DailyDigestWorker] Unexpected error: %s", exc)
+                if is_insufficient_quota_error(exc):
+                    await quota_alert_guard.notify_once("Ежедневный дайджест")
                 await asyncio.sleep(self._poll_seconds)
 
     async def _maybe_run(self) -> None:
@@ -781,6 +785,7 @@ class DailyDigestWorker:
         if now.time() < self._parse_run_time(self._run_at):
             return
         result = await DailyDigestJob(self._db).run(dry_run=False, now=now)
+        quota_alert_guard.mark_recovered()
         self._last_run_date = now.date()
         logger.info("[DailyDigestWorker] Run result: %s", result.get("status"))
 
@@ -1031,6 +1036,8 @@ class WeeklyDigestWorker:
                 break
             except Exception as exc:
                 logger.exception("[WeeklyDigestWorker] Unexpected error: %s", exc)
+                if is_insufficient_quota_error(exc):
+                    await quota_alert_guard.notify_once("Еженедельный дайджест")
                 await asyncio.sleep(self._poll_seconds)
 
     async def _maybe_run(self) -> None:
@@ -1043,5 +1050,6 @@ class WeeklyDigestWorker:
         if now.time() < DailyDigestWorker._parse_run_time(self._run_at):
             return
         result = await WeeklyThematicDigestJob(self._db).run(dry_run=False, now=now)
+        quota_alert_guard.mark_recovered()
         self._last_run_week = week_start
         logger.info("[WeeklyDigestWorker] Run result: %s", result.get("status"))
